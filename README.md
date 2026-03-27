@@ -142,11 +142,35 @@ To deploy to **Vercel**, you must configure these variables in the dashboard:
 
 ---
 
-## ⚡ Local Development
-1. Clone the repo.
-2. `npm install`.
-3. Create a `.env` file with your credentials.
-4. `npm run dev` to start the concurrent client (5173) and server (3000).
+## ⚡ Local Development & Concurrent Execution
+For rapid local iteration, MatchChayn is configured to boot both the frontend and backend simultaneously:
+1. Clone the repo: `git clone https://github.com/Matchchayn/MatchChayn_Web.git`
+2. Install all required dependencies: `npm install`
+3. Create a `.env` file with your credentials (see variables above).
+4. Run the full stack: `npm run dev`
+    - **Note for Mobile Devs**: This magic command utilizes `concurrently` to spin up both the Vite frontend (`localhost:5173`) and the Express Node server (`localhost:3000`) at exactly the same time. You do not need to boot them in separate terminal windows.
+
+---
+
+## 📦 Complete Dependencies List
+For developer reference, especially when mapping web functionality to native mobile libraries, here is the full list of production dependencies required by this application:
+- `@aws-sdk/client-s3`: 3.1018.0
+- `@aws-sdk/s3-request-presigner`: 3.1018.0
+- `firebase`: 12.11.0
+- `express`: 4.21.2
+- `react` / `react-dom`: 19.0.0
+- `react-router-dom`: 7.13.2
+- `vite`: 6.2.0
+- `tailwindcss` / `@tailwindcss/vite`: 4.1.14
+- `motion`: 12.23.24
+- `lucide-react`: 0.546.0
+- `sweetalert2`: 11.26.24
+- `resend`: 6.9.4
+- `clsx`: 2.1.1
+- `tailwind-merge`: 3.5.0
+- `date-fns`: 4.1.0
+- `emoji-picker-react`: 4.18.0
+- `dotenv`: 17.2.3
 
 ---
 

@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchUserProfile, getCachedProfile, getUserProfile } from '../utils/userProfileService';
 import { UserProfile } from '../types';
-import { ArrowLeft, Edit3, MapPin, Mail, Calendar, User as UserIcon, Heart, Play, Share2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Edit3, MapPin, Mail, Calendar, User as UserIcon, Heart, Play, Share2, Loader2, LogOut } from 'lucide-react';
 import MainLayout from './MainLayout';
+import { auth } from '../firebase';
 
 interface ProfileProps {
   profile: UserProfile | null;
@@ -241,9 +242,17 @@ export default function Profile({ profile }: ProfileProps) {
               </div>
 
               {!id ? (
-                <button className="w-full py-5 bg-white text-black rounded-2xl font-bold tracking-tight hover:bg-purple-500 hover:text-white transition-all">
-                  Share Profile
-                </button>
+                <div className="space-y-3">
+                  <button className="w-full py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-bold tracking-tight hover:bg-white/10 transition-all shadow-xl">
+                    Share Profile
+                  </button>
+                  <button 
+                    onClick={() => auth.signOut()}
+                    className="w-full py-5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl font-bold tracking-tight hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2 shadow-xl"
+                  >
+                    <LogOut className="w-5 h-5" /> Logout Account
+                  </button>
+                </div>
               ) : (
                 <button className="w-full py-5 bg-white text-black rounded-2xl font-bold uppercase tracking-wider hover:bg-purple-500 hover:text-white transition-all">
                   Report Profile
