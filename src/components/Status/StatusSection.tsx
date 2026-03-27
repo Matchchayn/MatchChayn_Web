@@ -52,14 +52,29 @@ export default function StatusSection({ profile }: StatusSectionProps) {
   }, {} as Record<string, Status[]>);
 
   return (
-    <div className="w-full flex items-center gap-4 overflow-x-auto pb-4 no-scrollbar">
+    <div className="w-full h-full flex items-center gap-4 overflow-x-auto pb-4 no-scrollbar">
+      {/* Create Status Button (Refined to match screenshot) */}
+      <div className="flex flex-col items-center gap-2 flex-shrink-0">
+        <div 
+          onClick={() => setShowUploadModal(true)}
+          className="w-16 h-16 rounded-full p-0.5 bg-gradient-to-tr from-[#9d5ce9] to-[#8b46e5] cursor-pointer transition-transform hover:scale-105 group relative"
+        >
+          <div className="w-full h-full rounded-full bg-[#090a1e] flex items-center justify-center">
+            <div className="w-[52px] h-[52px] rounded-full bg-[#a855f7] flex items-center justify-center transition-all group-hover:bg-[#b875ff]">
+              <Plus className="w-8 h-8 text-white" strokeWidth={1.5} />
+            </div>
+          </div>
+        </div>
+        <span className="text-[11px] font-medium text-white tracking-wide">Create</span>
+      </div>
+
       {/* My Status */}
       <div className="flex flex-col items-center gap-2 flex-shrink-0">
         <div 
           onClick={() => myStatuses.length > 0 ? setViewerData({ statuses: myStatuses, index: 0 }) : setShowUploadModal(true)}
-          className={`relative w-16 h-16 rounded-full p-0.5 cursor-pointer transition-transform hover:scale-105 ${myStatuses.length > 0 ? 'bg-gradient-to-tr from-purple-600 to-pink-500' : 'bg-white/10 border border-dashed border-white/20'}`}
+          className={`relative w-16 h-16 rounded-full p-0.5 cursor-pointer transition-transform hover:scale-105 ${myStatuses.length > 0 ? 'bg-[#a855f7]' : 'bg-white/10 border-2 border-dashed border-white/20'}`}
         >
-          <div className="w-full h-full rounded-full bg-[#050512] p-0.5">
+          <div className="w-full h-full rounded-full bg-[#090a1e] p-0.5">
             <div className="w-full h-full rounded-full overflow-hidden">
               {profile?.media?.some(m => m.type === 'video') && !profile?.media?.some(m => m.type === 'image') ? (
                 <video 
@@ -76,17 +91,8 @@ export default function StatusSection({ profile }: StatusSectionProps) {
               )}
             </div>
           </div>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowUploadModal(true);
-            }}
-            className="absolute bottom-0 right-0 w-5 h-5 bg-purple-600 rounded-full flex items-center justify-center border-2 border-[#050512] hover:bg-purple-700 transition-colors"
-          >
-            <Plus className="w-3 h-3 text-white" />
-          </button>
         </div>
-        <span className="text-[10px] font-bold text-gray-400">My Status</span>
+        <span className="text-[11px] font-medium text-white tracking-wide">My Status</span>
       </div>
 
       {/* Match Statuses */}
@@ -94,9 +100,9 @@ export default function StatusSection({ profile }: StatusSectionProps) {
         <div key={userId} className="flex flex-col items-center gap-2 flex-shrink-0">
           <div 
             onClick={() => setViewerData({ statuses, index: 0 })}
-            className="w-16 h-16 rounded-full p-0.5 bg-gradient-to-tr from-purple-600 to-pink-500 cursor-pointer transition-transform hover:scale-105"
+            className="w-16 h-16 rounded-full p-0.5 bg-[#a855f7] cursor-pointer transition-transform hover:scale-105"
           >
-            <div className="w-full h-full rounded-full bg-[#050512] p-0.5">
+            <div className="w-full h-full rounded-full bg-[#090a1e] p-0.5">
               <div className="w-full h-full rounded-full overflow-hidden">
                 {statuses[0].user?.media?.some((m: any) => m.type === 'video') && !statuses[0].user?.media?.some((m: any) => m.type === 'image') ? (
                   <video 
@@ -114,7 +120,7 @@ export default function StatusSection({ profile }: StatusSectionProps) {
               </div>
             </div>
           </div>
-          <span className="text-[10px] font-bold text-gray-400 truncate w-16 text-center">
+          <span className="text-[11px] font-medium text-white tracking-wide truncate w-16 text-center">
             {statuses[0].user?.firstName || 'User'}
           </span>
         </div>

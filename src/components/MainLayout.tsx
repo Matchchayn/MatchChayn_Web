@@ -100,11 +100,19 @@ export default function MainLayout({ children, profile, noScroll = false }: Main
             <button
               key={item.id}
               onClick={() => navigate(item.path)}
-              className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-all ${
+              className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-all relative ${
                 isActive ? 'text-purple-500' : 'text-gray-500'
               }`}
             >
-              <item.icon className={`w-5 h-5 ${isActive ? 'scale-110' : 'scale-100'}`} />
+              {item.id === 'match' ? (
+                <img 
+                  src={logo} 
+                  alt="Match" 
+                  className={`w-6 h-6 transition-transform ${isActive ? 'scale-110 filter none' : 'scale-100 grayscale opacity-50'}`} 
+                />
+              ) : (
+                <item.icon className={`w-5 h-5 ${isActive ? 'scale-110' : 'scale-100'}`} />
+              )}
               <span className="text-[10px] font-bold tracking-tighter">{item.label}</span>
               {isActive && (
                 <motion.div 
