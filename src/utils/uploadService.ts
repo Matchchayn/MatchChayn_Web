@@ -13,8 +13,15 @@ export const getPresignedUrl = async (fileName: string, fileType: string): Promi
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to get upload URL');
+    let errorMsg = 'Failed to get upload URL';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.error || errorMsg;
+    } catch (e) {
+      // Fallback if backend returned non-JSON (like 502 HTML from proxy)
+      errorMsg = await response.text().catch(() => `HTTP Error ${response.status}`);
+    }
+    throw new Error(errorMsg);
   }
 
   return response.json();

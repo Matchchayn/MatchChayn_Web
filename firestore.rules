@@ -122,9 +122,11 @@ service cloud.firestore {
     }
 
     function isValidMessage(data) {
-      return hasRequiredFields(['chatId', 'senderId', 'text']) &&
+      return hasRequiredFields(['chatId', 'senderId', 'type']) &&
              data.chatId is string && data.senderId is string &&
-             data.text is string && data.text.size() > 0 && data.text.size() < 5000;
+             data.type in ['text', 'image', 'audio'] &&
+             (!('text' in data) || (data.text is string && data.text.size() < 5000)) &&
+             (!('mediaUrl' in data) || data.mediaUrl == null || isValidUrl(data.mediaUrl));
     }
 
     function isValidEvent(data) {
@@ -195,8 +197,11 @@ service cloud.firestore {
                       request.auth.uid == request.resource.data.senderId && 
                       request.resource.data.chatId.matches(".*" + request.auth.uid + ".*") &&
                       isValidMessage(request.resource.data);
-      allow update: if false;
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == resource.data.senderId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])) ||
+        (request.auth.uid != resource.data.senderId && resource.data.chatId.matches(".*" + request.auth.uid + ".*") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']))
+      );
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.senderId);
     }
 
     match /events/{eventId} {

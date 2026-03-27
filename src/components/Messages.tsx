@@ -18,7 +18,10 @@ import {
   Trash2,
   StopCircle,
   AlertCircle,
-  Clock
+  Clock,
+  Edit2,
+  Download,
+  CheckCheck
 } from 'lucide-react';
 import { sendNotification } from '../utils/notificationService';
 import { 
@@ -32,16 +35,20 @@ import {
   doc, 
   getDoc,
   getDocs,
-  limit
+  limit,
+  deleteDoc,
+  updateDoc,
+  writeBatch
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from '../firebase';
+import { db, auth } from '../firebase';
+import { uploadFile } from '../utils/uploadService';
 import { UserProfile } from '../types';
 import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from './MainLayout';
 import { motion, AnimatePresence } from 'motion/react';
 import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
 import { useAlert } from '../hooks/useAlert';
+import Swal from 'sweetalert2';
 
 interface Message {
   id: string;
@@ -50,6 +57,8 @@ interface Message {
   type: 'text' | 'image' | 'audio';
   mediaUrl?: string;
   createdAt: any;
+  editedAt?: any;
+  isRead?: boolean;
 }
 
 interface MessagesProps {
@@ -134,6 +143,40 @@ const AudioPlayer = ({ url, isMe }: { url: string; isMe: boolean }) => {
   );
 };
 
+const compressImage = (file: File | Blob): Promise<Blob> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > MAX_WIDTH) {
+          height = height * (MAX_WIDTH / width);
+          width = MAX_WIDTH;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else resolve(file); // fallback to original
+        }, 'image/jpeg', 0.7); // compress to 70% quality JPEG
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+  });
+};
+
 export default function Messages({ profile }: MessagesProps) {
   const { matchId: paramMatchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
@@ -144,6 +187,7 @@ export default function Messages({ profile }: MessagesProps) {
   const [lastMessages, setLastMessages] = useState<Record<string, Message>>({});
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   
   // Media States
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
@@ -151,7 +195,7 @@ export default function Messages({ profile }: MessagesProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaLoading, setMediaLoading] = useState(false);
-  
+  const [stagedMedia, setStagedMedia] = useState<{ type: 'image' | 'audio', file: File | Blob, url: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -243,13 +287,128 @@ export default function Messages({ profile }: MessagesProps) {
     return () => unsubscribe();
   }, [selectedMatch]);
 
-  const handleSendMessage = async (e?: React.FormEvent, mediaData?: { type: 'image' | 'audio', url: string }) => {
+  // Read Receipts logic
+  useEffect(() => {
+    if (!messages.length || !auth.currentUser) return;
+    const unreadIds = messages.filter(m => m.senderId !== auth.currentUser!.uid && !m.isRead).map(m => m.id);
+    if (unreadIds.length > 0) {
+      const markAsRead = async () => {
+        try {
+          const batch = writeBatch(db);
+          unreadIds.forEach(id => {
+            batch.update(doc(db, 'messages', id), { isRead: true });
+          });
+          await batch.commit();
+        } catch (err) {
+          console.error('Mark as read failed:', err);
+        }
+      };
+      markAsRead();
+    }
+  }, [messages]);
+
+  const handleDeleteMessage = async (msgId: string) => {
+    const result = await Swal.fire({
+      title: 'Delete message?',
+      text: "You won't be able to revert this!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#a855f7',
+      cancelButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, delete it!',
+      background: '#11112b',
+      color: '#ffffff',
+      backdrop: 'rgba(0, 0, 0, 0.8)'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'messages', msgId));
+      showAlert('Message deleted.', 'success');
+    } catch (err) {
+      console.error('Delete error', err);
+      showAlert('Failed to delete message.', 'error');
+    }
+  };
+
+  const handleDownloadImage = async (url: string, filename: string = 'image.jpg') => {
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const objUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objUrl);
+    } catch (err) {
+      window.open(url, '_blank');
+    }
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!newMessage.trim() && !mediaData && !auth.currentUser) return;
+    if (!newMessage.trim() && !stagedMedia && !auth.currentUser) return;
     if (!selectedMatch || !auth.currentUser) return;
 
+    if (mediaLoading) return;
+
+    if (editingMessageId && newMessage.trim()) {
+      try {
+        await updateDoc(doc(db, 'messages', editingMessageId), {
+          text: newMessage.trim(),
+          editedAt: serverTimestamp()
+        });
+        setEditingMessageId(null);
+        setNewMessage('');
+        setIsEmojiOpen(false);
+      } catch (err) {
+        console.error('Edit error:', err);
+        showAlert('Failed to edit message.', 'error');
+      }
+      return;
+    }
+
     const chatId = [auth.currentUser.uid, selectedMatch.uid].sort().join('_');
-    const text = newMessage;
+    const textSnapshot = newMessage;
+    let finalMediaData: { type: 'image' | 'audio', url: string } | null = null;
+
+    if (stagedMedia) {
+      setMediaLoading(true);
+      try {
+        const fileExt = stagedMedia.type === 'audio' ? 'webm' : 'jpg';
+        const rawFileName = (stagedMedia.file as File).name || `media.${fileExt}`;
+        const filename = `chat_${Date.now()}_${rawFileName.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+        
+        let fileToUpload: Blob | File = stagedMedia.file;
+        let finalFileType = stagedMedia.type === 'audio' ? 'audio/webm' : 'image/jpeg';
+        
+        if (stagedMedia.type === 'image') {
+          fileToUpload = await compressImage(stagedMedia.file);
+          finalFileType = fileToUpload.type || 'image/jpeg';
+        } else if (stagedMedia.type === 'audio') {
+          // Coerce untyped iOS blobs to an audio mime-type before upload
+          if (!fileToUpload.type) {
+            fileToUpload = new Blob([fileToUpload], { type: 'audio/webm' });
+          }
+          finalFileType = fileToUpload.type || 'audio/webm';
+        }
+
+        const url = await uploadFile(fileToUpload, filename);
+        finalMediaData = { type: stagedMedia.type, url };
+        URL.revokeObjectURL(stagedMedia.url);
+        setStagedMedia(null);
+      } catch (err) {
+        console.error('Media upload failed:', err);
+        showAlert('Failed to upload media.', 'error');
+        setMediaLoading(false);
+        return;
+      }
+    }
+
     setNewMessage('');
     setIsEmojiOpen(false);
 
@@ -257,62 +416,65 @@ export default function Messages({ profile }: MessagesProps) {
       await addDoc(collection(db, 'messages'), {
         chatId,
         senderId: auth.currentUser.uid,
-        text: mediaData ? '' : text,
-        type: mediaData ? mediaData.type : 'text',
-        mediaUrl: mediaData ? mediaData.url : null,
+        text: textSnapshot || '',
+        type: finalMediaData ? finalMediaData.type : 'text',
+        mediaUrl: finalMediaData ? finalMediaData.url : null,
         createdAt: serverTimestamp()
       });
 
-      // Send Message Notification
       if (profile) {
         await sendNotification(selectedMatch.uid || (selectedMatch as any).id, 'message', profile);
       }
     } catch (err) {
       console.error('Firebase Save Failed:', err);
       showAlert('Message failed to save to Firebase.', 'error');
-    }
-  };
-
-  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !auth.currentUser || !selectedMatch) return;
-    setIsMediaMenuOpen(false);
-    setMediaLoading(true);
-
-    try {
-      const chatId = [auth.currentUser.uid, selectedMatch.uid].sort().join('_');
-      const filename = `${Date.now()}_${file.name}`;
-      const storageRef = ref(storage, `chat_media/${chatId}/${filename}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      await handleSendMessage(undefined, { type: 'image', url });
-    } catch (err) {
-      console.error('Image upload failed:', err);
-      showAlert('Failed to upload image.', 'error');
     } finally {
       setMediaLoading(false);
     }
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsMediaMenuOpen(false);
+    setStagedMedia({
+      type: 'image',
+      file,
+      url: URL.createObjectURL(file)
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await uploadVoiceNote(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      setRecordingTime(0);
-      recordingTimerRef.current = setInterval(() => setRecordingTime(p => p + 1), 1000);
-    } catch (err) {
-      showAlert('Microphone access denied.', 'error');
-    }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Let the browser pick its best supported codec natively rather than hardcoding webm 
+        // which sometimes fails on iOS depending on the implementation
+        const recorder = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+        
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        
+        recorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current);
+          setStagedMedia({
+            type: 'audio',
+            file: audioBlob,
+            url: URL.createObjectURL(audioBlob)
+          });
+          stream.getTracks().forEach(track => track.stop());
+        };
+        
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+        setIsRecording(true);
+        setRecordingTime(0);
+        recordingTimerRef.current = setInterval(() => setRecordingTime(p => p + 1), 1000);
+      } catch (err) {
+        showAlert('Microphone access denied or not supported.', 'error');
+      }
   };
 
   const stopRecording = () => {
@@ -320,23 +482,6 @@ export default function Messages({ profile }: MessagesProps) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-    }
-  };
-
-  const uploadVoiceNote = async (blob: Blob) => {
-    if (!auth.currentUser || !selectedMatch) return;
-    setMediaLoading(true);
-    try {
-      const chatId = [auth.currentUser.uid, selectedMatch.uid].sort().join('_');
-      const filename = `${Date.now()}.webm`;
-      const storageRef = ref(storage, `chat_media/${chatId}/${filename}`);
-      await uploadBytes(storageRef, blob);
-      const url = await getDownloadURL(storageRef);
-      await handleSendMessage(undefined, { type: 'audio', url });
-    } catch (err) {
-      showAlert('Failed to upload voice note.', 'error');
-    } finally {
-      setMediaLoading(false);
     }
   };
 
@@ -500,36 +645,79 @@ export default function Messages({ profile }: MessagesProps) {
                         </div>
                       )}
                       
-                      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                        <div className={`max-w-[75%] rounded-[24px] overflow-hidden relative ${
-                          isMe ? 'bg-purple-600 rounded-tr-none text-white' : 'bg-white/10 border border-white/10 rounded-tl-none text-gray-200'
-                        }`}>
-                          {msg.type === 'text' && (
-                            <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap">
-                              {msg.text}
+                      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300 group`}>
+                        <div className={`flex items-start gap-2 max-w-full ${isMe ? 'flex-row' : 'flex-row-reverse'}`}>
+                          {isMe && (
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-2 shrink-0">
+                              {msg.type === 'text' && (
+                                <button 
+                                  onClick={() => {
+                                    setEditingMessageId(msg.id);
+                                    setNewMessage(msg.text || '');
+                                  }}
+                                  className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                                  title="Edit"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button 
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           )}
-                          
-                          {msg.type === 'image' && (
-                            <div className="p-1">
-                              <img 
-                                src={msg.mediaUrl} 
-                                alt="Media" 
-                                className="rounded-2xl w-full max-h-[400px] object-cover hover:scale-[1.02] transition-transform duration-500 cursor-pointer" 
-                                onClick={() => window.open(msg.mediaUrl, '_blank')}
-                              />
-                            </div>
-                          )}
+                          <div className={`max-w-[75%] rounded-[24px] overflow-hidden relative ${
+                            isMe ? 'bg-purple-600 rounded-tr-none text-white' : 'bg-white/10 border border-white/10 rounded-tl-none text-gray-200'
+                          }`}>
+                            {msg.type === 'text' && (
+                              <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap">
+                                {msg.text}
+                              </div>
+                            )}
+                            
+                            {msg.type === 'image' && (
+                              <div className="p-1 relative group/img">
+                                <img 
+                                  src={msg.mediaUrl} 
+                                  alt="Media" 
+                                  className="rounded-2xl w-full max-h-[400px] object-cover hover:scale-[1.02] transition-transform duration-500 cursor-pointer" 
+                                  onClick={() => window.open(msg.mediaUrl, '_blank')}
+                                />
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadImage(msg.mediaUrl!, `matchchayn_image_${msg.id}.jpg`);
+                                  }}
+                                  className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity backdrop-blur-md"
+                                  title="Download"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
 
-                          {msg.type === 'audio' && (
-                            <AudioPlayer url={msg.mediaUrl!} isMe={isMe} />
-                          )}
+                            {msg.type === 'audio' && (
+                              <AudioPlayer url={msg.mediaUrl!} isMe={isMe} />
+                            )}
+                          </div>
                         </div>
                         
-                        <div className={`mt-1.5 mx-2 text-[9px] font-bold opacity-30 ${isMe ? 'text-right text-gray-400' : 'text-left text-purple-400'}`}>
-                          {msg.createdAt 
-                            ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            : 'Sending...'}
+                        <div className={`mt-1.5 mx-2 flex items-center gap-1.5 text-[9px] font-bold opacity-40 ${isMe ? 'justify-end text-gray-300' : 'justify-start text-purple-300'}`}>
+                          {msg.editedAt && <span>(edited)</span>}
+                          <span>
+                            {msg.createdAt 
+                              ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : 'Sending...'}
+                          </span>
+                          {isMe && msg.isRead && (
+                            <span className="flex items-center gap-0.5 text-green-400 ml-1">
+                              <CheckCheck className="w-3 h-3" /> Seen
+                            </span>
+                          )}
                         </div>
                       </div>
                     </React.Fragment>
@@ -539,7 +727,57 @@ export default function Messages({ profile }: MessagesProps) {
               </div>
 
               {/* Message Input Container */}
-              <div className="relative z-20 p-8 border-t border-white/5 bg-[#090a1e]/60 backdrop-blur-xl">
+              <div className="relative z-20 px-8 pb-8 pt-4 border-t border-white/5 bg-[#090a1e]/60 backdrop-blur-xl">
+                
+                {editingMessageId && (
+                  <div className="absolute -top-10 left-8 right-8 flex items-center justify-between bg-purple-600/20 border border-purple-500/30 rounded-t-xl px-4 py-2 text-xs font-bold text-purple-200 backdrop-blur-md">
+                    <span className="flex flex-row items-center gap-2"><Edit2 className="w-3.5 h-3.5" /> Editing message...</span>
+                    <button 
+                      onClick={() => {
+                        setEditingMessageId(null);
+                        setNewMessage('');
+                      }}
+                      className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                
+                {/* Staged Media Preview Area */}
+                <AnimatePresence>
+                  {stagedMedia && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute bottom-[calc(100%+1rem)] left-8 p-3 rounded-2xl bg-[#090a1e]/90 backdrop-blur-3xl border border-white/10 shadow-2xl z-40 origin-bottom-left flex flex-col items-center"
+                    >
+                      <button 
+                        onClick={() => {
+                          URL.revokeObjectURL(stagedMedia.url);
+                          setStagedMedia(null);
+                        }}
+                        className="absolute -top-3 -right-3 p-1.5 bg-red-500 hover:bg-red-400 text-white rounded-full transition-all hover:scale-110 shadow-xl z-50 animate-bounce-in"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                      
+                      {stagedMedia.type === 'image' && (
+                        <div className="w-40 h-40 rounded-xl overflow-hidden bg-black/50 ring-2 ring-purple-500/30">
+                          <img src={stagedMedia.url} className="w-full h-full object-cover" alt="Preview" />
+                        </div>
+                      )}
+                      
+                      {stagedMedia.type === 'audio' && (
+                        <div className="bg-purple-900/40 rounded-xl overflow-hidden border border-purple-500/20 max-w-[280px]">
+                          <AudioPlayer url={stagedMedia.url} isMe={true} />
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Emoji Picker */}
                 <AnimatePresence>
                   {isEmojiOpen && (
@@ -650,10 +888,17 @@ export default function Messages({ profile }: MessagesProps) {
                     <button 
                       type="button"
                       onClick={() => handleSendMessage()}
-                      disabled={!newMessage.trim() && !mediaLoading}
-                      className="p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-2xl transition-all active:scale-95 shrink-0"
+                      disabled={(!newMessage.trim() && !stagedMedia) || mediaLoading}
+                      className="p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-2xl transition-all active:scale-95 shrink-0 flex items-center justify-center relative overflow-hidden"
                     >
-                      {mediaLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Send className="w-6 h-6" />}
+                      {mediaLoading ? (
+                        <>
+                          <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                          <Loader2 className="w-6 h-6 animate-spin relative z-10" />
+                        </>
+                      ) : (
+                        <Send className="w-6 h-6" />
+                      )}
                     </button>
                   )}
                 </div>

@@ -173,6 +173,6 @@ For developer reference, especially when mapping web functionality to native mob
 - `dotenv`: 17.2.3
 
 ---
-
+![alt text](image.png)
 ## ⚠️ Database Decision Note (Apology Modal)
 Due to recent database schema transitions that resulted in isolated data loss, we have implemented a mandatory **Apology Modal** on the Login page. Users from the previous "beta" wave are advised to sign up again with authentic data and video verification. This is the **final wave** of data migration.

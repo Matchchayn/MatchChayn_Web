@@ -222,9 +222,9 @@ app.post('/api/media/presigned-url', authenticateToken, async (req: any, res) =>
       return res.status(400).json({ error: "fileName and fileType are required" });
     }
 
-    // Basic validation for video/image types
-    if (!fileType.startsWith('video/') && !fileType.startsWith('image/')) {
-      return res.status(400).json({ error: "Only video and image files are allowed" });
+    // Basic validation for video/image/audio types
+    if (!fileType.startsWith('video/') && !fileType.startsWith('image/') && !fileType.startsWith('audio/')) {
+      return res.status(400).json({ error: "Only video, image, and audio files are allowed" });
     }
 
     const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
