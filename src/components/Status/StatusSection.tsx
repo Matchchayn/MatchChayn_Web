@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Camera, Loader2, Play } from 'lucide-react';
 import { Status, UserProfile } from '../../types';
@@ -127,26 +128,29 @@ export default function StatusSection({ profile }: StatusSectionProps) {
         </div>
       )}
 
-      <AnimatePresence>
-        {showUploadModal && profile && (
+
+      {showUploadModal && profile && createPortal(
+        <AnimatePresence>
           <StatusUploadModal 
             userId={profile.uid} 
             onClose={() => setShowUploadModal(false)}
-            onSuccess={() => {
-              // Refresh match statuses if needed, though my status is handled by subscription
-            }}
+            onSuccess={() => {}}
           />
-        )}
+        </AnimatePresence>,
+        document.body
+      )}
 
-        {viewerData && (
+      {viewerData && createPortal(
+        <AnimatePresence>
           <StatusViewerModal 
             statuses={viewerData.statuses}
             initialIndex={viewerData.index}
             onClose={() => setViewerData(null)}
             viewerProfile={profile}
           />
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

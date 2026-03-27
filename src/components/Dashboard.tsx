@@ -96,28 +96,30 @@ export default function Dashboard({ profile }: DashboardProps) {
 
   const renderStatus = () => <StatusSection profile={profile} />;
 
-  const renderPremiumCard = () => (
+  const renderPremiumCard = (isSidebar?: boolean) => (
     <div 
       onClick={() => navigate('/premium')}
-      className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-900/40 to-indigo-900/40 border border-purple-500/20 p-6 group hover:border-purple-500/40 transition-all cursor-pointer shadow-xl"
+      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-900/40 to-indigo-900/40 border border-purple-500/20 group hover:border-purple-500/40 transition-all cursor-pointer shadow-xl ${isSidebar ? 'p-4' : 'p-6'}`}
     >
-      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-        <Heart className="w-24 h-24 fill-white text-white" />
-      </div>
-      <div className="relative z-10 space-y-4">
+      {!isSidebar && (
+        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <Heart className="w-24 h-24 fill-white text-white" />
+        </div>
+      )}
+      <div className="relative z-10 space-y-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
-            <Heart className="w-5 h-5 text-purple-400" />
+          <div className={`${isSidebar ? 'w-8 h-8' : 'w-10 h-10'} bg-purple-500/20 rounded-xl flex items-center justify-center shrink-0`}>
+            <Heart className={`${isSidebar ? 'w-4 h-4' : 'w-5 h-5'} text-purple-400`} />
           </div>
-          <div>
-            <h3 className="font-bold text-lg text-white">Premium Access</h3>
-            <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-widest uppercase">Elite Status</span>
+          <div className="min-w-0">
+            <h3 className={`font-bold text-white truncate ${isSidebar ? 'text-base leading-tight' : 'text-lg'}`}>Premium Access</h3>
+            <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-lg text-[9px] font-bold tracking-widest uppercase">Elite Status</span>
           </div>
         </div>
-        <p className="text-sm text-purple-200/60 leading-relaxed font-medium">
-          Boost your visibility 5x and see who vibes with you instantly. Unlock the full MatchChayn experience.
+        <p className={`${isSidebar ? 'text-xs' : 'text-sm'} text-purple-200/60 leading-relaxed font-medium line-clamp-2`}>
+          Boost visibility 5x and see who vibes instantly.
         </p>
-        <button className="w-full py-3 bg-white text-purple-900 rounded-2xl text-xs font-bold transition-all active:scale-95 hover:bg-purple-50">
+        <button className={`w-full bg-white text-purple-900 rounded-2xl font-bold transition-all active:scale-95 hover:bg-purple-50 ${isSidebar ? 'py-2 text-[10px]' : 'py-3 text-xs'}`}>
           {profile?.isPro ? 'VIP Active' : 'Upgrade to Pro'}
         </button>
       </div>
@@ -254,7 +256,7 @@ export default function Dashboard({ profile }: DashboardProps) {
             </div>
 
             {/* Main Discovery / Video Area */}
-            <div className="w-full max-w-[400px] xl:max-w-lg mx-auto flex flex-col items-center justify-center shrink-0">
+            <div className="w-full max-w-[400px] xl:max-w-[440px] mx-auto flex flex-col items-center justify-center shrink-0">
               {loading ? (
                 <div className="py-20 flex justify-center w-full"><Loader2 className="w-12 h-12 text-purple-500 animate-spin" /></div>
               ) : discoveryProfiles.length > 0 ? (
@@ -294,12 +296,12 @@ export default function Dashboard({ profile }: DashboardProps) {
             <div className="absolute bottom-[-10%] left-[-10%] w-[250px] h-[250px] bg-indigo-900/10 rounded-full blur-[80px]" />
           </div>
 
-          <div className="p-8 pb-4 relative z-10 shrink-0">
+          <div className="p-6 pb-2 relative z-10 shrink-0">
             {renderStatus()}
           </div>
-
-          <div className="px-6 mb-6 relative z-10 shrink-0">
-            {renderPremiumCard()}
+          
+          <div className="px-5 mb-4 relative z-10 shrink-0">
+            {renderPremiumCard(true)}
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 relative z-10">

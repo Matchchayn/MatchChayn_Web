@@ -42,13 +42,13 @@ export default function Sidebar({ profile, isAdmin }: SidebarProps) {
 
   return (
     <aside className="hidden md:flex w-64 border-r border-white/5 flex flex-col bg-[#090a1e] h-full transition-all duration-300">
-      <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
 
         {sidebarItems.map((item) => (
           <button
             key={item.id}
             onClick={() => navigate(item.path)}
-            className={`w-full flex items-center gap-4 px-6 py-4 transition-all rounded-2xl group ${
+            className={`w-full flex items-center gap-4 px-6 py-3 transition-all rounded-2xl group ${
               location.pathname === item.path
                 ? 'bg-white/10 text-white'
                 : 'text-gray-400 hover:bg-white/5 hover:text-white'

@@ -31,7 +31,7 @@ export default function RelaxConnectMatchCard({ profile, onLike, onPass }: Relax
     <motion.div
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className="relative w-full max-w-lg aspect-[4/5] bg-[#090a1e] rounded-[2.5rem] overflow-hidden shadow-2xl border border-white/10 group"
+      className="relative w-full max-w-md aspect-[4/5] bg-[#090a1e] rounded-[2.5rem] overflow-hidden shadow-2xl border border-white/10 group"
     >
       {isVideo ? (
         <video
