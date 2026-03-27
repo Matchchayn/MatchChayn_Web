@@ -125,9 +125,29 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
     }
   };
 
-  const handleAuthSuccess = (user: any) => {
+  const handleAuthSuccess = async (user: any) => {
     clearProfileCache();
     showAlert('Welcome to MatchChayn!', 'success');
+
+    // Send welcome email for newly created social accounts (Google/Apple)
+    // Check if account was created within the last 30 seconds to avoid sending on every login
+    const createdAt = user?.metadata?.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
+    const isNewUser = Date.now() - createdAt < 30000;
+    if (isNewUser && user?.email) {
+      try {
+        await apiFetch('/api/auth/welcome', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            email: user.email,
+            firstName: user.displayName?.split(' ')[0] || user.email.split('@')[0]
+          }),
+        });
+      } catch (err) {
+        // Non-blocking — welcome email failure should not affect the login flow
+        console.warn('Welcome email failed:', err);
+      }
+    }
+
     if (onSignupSuccess) {
       onSignupSuccess(user);
     }
