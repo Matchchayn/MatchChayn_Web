@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile information, interests, and preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID from Firebase Auth." },
+        "firstName": { "type": "string", "description": "The user's first name." },
+        "lastName": { "type": "string", "description": "The user's last name." },
+        "username": { "type": "string", "description": "The user's unique username." },
+        "dateOfBirth": { "type": "string", "format": "date", "description": "The user's date of birth." },
+        "gender": { "type": "string", "description": "The user's gender." },
+        "city": { "type": "string", "description": "The user's city." },
+        "country": { "type": "string", "description": "The user's country." },
+        "relationshipStatus": { "type": "string", "description": "The user's current relationship status." },
+        "bio": { "type": "string", "description": "A short bio about the user." },
+        "interests": { "type": "array", "items": { "type": "string" }, "description": "A list of the user's interests." },
+        "preferences": { "type": "object", "description": "The user's dating preferences." },
+        "media": { "type": "array", "items": { "type": "object" }, "description": "A list of media URLs (photos, videos)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the profile was last updated." }
+      },
+      "required": ["uid", "firstName", "lastName", "username", "dateOfBirth", "gender"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "Represents a like or match request between users.",
+      "type": "object",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUserId", "toUserId", "status"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Represents a successful match between two users.",
+      "type": "object",
+      "properties": {
+        "users": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["users"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message sent between matched users.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "senderId", "text"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "A community event created by a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "location": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "attendees": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "date", "location", "creatorId"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "A user with administrative privileges.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "addedBy": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "Status": {
+      "title": "Status",
+      "description": "A temporary status post with an image and optional text.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "imageUrl", "createdAt", "expiresAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "The user's profile document."
+    },
+    "/likes/{likeId}": {
+      "schema": "Like",
+      "description": "A like or match request."
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "A confirmed match."
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "A chat message."
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "A community event."
+    },
+    "/admins/{email}": {
+      "schema": "Admin",
+      "description": "An administrator record."
+    },
+    "/statuses/{statusId}": {
+      "schema": "Status",
+      "description": "A user status update."
+    }
+  }
+}

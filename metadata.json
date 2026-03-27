@@ -1,0 +1,5 @@
+{
+  "name": "RelaxConnect",
+  "description": "A modern dating app for meaningful connections.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

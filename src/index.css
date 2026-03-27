@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #a855f7;
+  --primary-hover: #9333ea;
+  --secondary: #06b6d4;
+  --bg-deep: #090a1e;
+  --bg-darker: #090a1e;
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-glow: 0 0 25px rgba(168, 85, 247, 0.4);
+}
+
+body {
+  background-color: var(--bg-deep);
+  color: white;
+  font-family: 'Roboto', -apple-system, sans-serif;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Premium Components */
+.premium-glass-card {
+  background: rgba(18, 18, 43, 0.45);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+.premium-input {
+  background: rgba(18, 18, 43, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 0.875rem 1.25rem;
+  color: white;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.9375rem;
+}
+
+.premium-input.with-icon {
+  padding-left: 3.25rem;
+}
+
+.premium-input:focus {
+  border-color: var(--primary);
+  background: rgba(18, 18, 43, 0.6);
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.15);
+  outline: none;
+}
+
+.social-auth-circle {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer;
+}
+
+.social-auth-circle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.social-auth-circle:active {
+  transform: scale(0.95);
+}
+
+.social-auth-circle.placeholder {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.social-auth-circle.placeholder:hover {
+  transform: none;
+}
+
+.premium-button {
+  background: linear-gradient(135deg, var(--primary), #7c3aed);
+  color: white;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  padding: 0.875rem 1.75rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+}
+
+.premium-button:hover {
+  transform: translateY(-1px);
+}
+
+.premium-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.premium-chip {
+  padding: 0.625rem 1.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: #9ca3af;
+  font-size: 0.875rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.premium-chip:hover {
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.05);
+  color: white;
+}
+
+.premium-chip.active,
+.premium-chip.selected {
+  background: linear-gradient(135deg, var(--primary), #7c3aed);
+  border-color: var(--primary);
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+  transform: scale(1.05);
+}
+
+.bg-mesh-gradient {
+  background-color: #090a1e;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(168, 85, 247, 0.07) 0px, transparent 50%);
+}
