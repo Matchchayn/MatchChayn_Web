@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Firebase administrative files
+firestore.rules
+firestore.indexes.json
+firebase.json
