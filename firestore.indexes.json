@@ -1,0 +1,10 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "otps",
+      "fieldPath": "expiresAt",
+      "ttl": true
+    }
+  ]
+}

@@ -55,7 +55,7 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
     try {
       await apiFetch('/api/auth/send-otp', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       setStep('otp');
       showAlert('OTP sent to your email', 'success');
@@ -93,7 +93,7 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
     try {
       await apiFetch('/api/auth/verify-otp', {
         method: 'POST',
-        body: JSON.stringify({ email, otp: otpValue }),
+        body: JSON.stringify({ email: email.trim(), otp: otpValue }),
       });
       setStep('password');
       showAlert('Email verified successfully', 'success');

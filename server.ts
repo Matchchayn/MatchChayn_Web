@@ -4,6 +4,14 @@ import path from "path";
 import { Resend } from 'resend';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import fs from 'fs';
+
+// Read Firebase Config
+const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -25,8 +33,8 @@ const isR2Configured = !!(
   process.env.CLOUDFLARE_PUBLIC_DOMAIN
 );
 
-// In-memory OTP store (for demo purposes)
-const otpStore = new Map<string, string>();
+// Helper for consistent email normalization
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 // Simple authentication middleware (placeholder for now)
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -46,10 +54,24 @@ app.post("/api/auth/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required" });
 
+  const normalizedEmail = normalizeEmail(email);
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  otpStore.set(email, otp);
+  const expiresAtMillis = Date.now() + 15 * 60 * 1000; // 15 minutes from now
+  const expiresAt = Timestamp.fromMillis(expiresAtMillis);
 
-  console.log(`[OTP] Generated ${otp} for ${email}`);
+  try {
+    await setDoc(doc(db, "otps", normalizedEmail), {
+      otp,
+      expiresAt,
+      createdAt: Timestamp.now()
+    });
+    console.log(`[OTP] Stored ${otp} in Firestore for ${normalizedEmail}. Expires at ${expiresAt.toDate().toISOString()}`);
+  } catch (error) {
+    console.error("[OTP] Firestore Store Error:", error);
+    return res.status(500).json({ error: "Failed to store verification code" });
+  }
+
+  console.log(`[OTP] Generated ${otp} for ${normalizedEmail}. Expires at ${expiresAt.toDate().toISOString()}`);
 
   // Non-blocking email sending to keep response fast
   (async () => {
@@ -88,7 +110,7 @@ app.post("/api/auth/send-otp", async (req, res) => {
     <tr>
       <td class="content">
         <h1>Verify Identity</h1>
-        <p>Use the code below to secure your MatchChayn account. It expires in 10 minutes.</p>
+        <p>Use the code below to secure your MatchChayn account. It expires in 15 minutes.</p>
         <div class="otp-container"><span class="otp-code">${otp}</span></div>
         <p style="font-size: 13px;">If you didn't request this, ignore this email.</p>
         <a href="https://matchchayn.com" class="btn">Open MatchChayn</a>
@@ -116,15 +138,41 @@ app.post("/api/auth/send-otp", async (req, res) => {
   res.json({ success: true, message: "OTP sent to your email" });
 });
 
-app.post("/api/auth/verify-otp", (req, res) => {
+app.post("/api/auth/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
-  const storedOtp = otpStore.get(email);
+  const normalizedEmail = normalizeEmail(email);
+  
+  console.log(`[OTP] Verification attempt for ${normalizedEmail}. Provided: ${otp}`);
 
-  if (storedOtp && storedOtp === otp) {
-    otpStore.delete(email);
+  try {
+    const otpDoc = await getDoc(doc(db, "otps", normalizedEmail));
+    
+    if (!otpDoc.exists()) {
+      console.log(`[OTP] No entry found for ${normalizedEmail}`);
+      return res.status(400).json({ error: "Verification code not found or expired. Please request a new one." });
+    }
+
+    const entry = otpDoc.data();
+    const isExpired = Date.now() > entry.expiresAt.toMillis();
+    
+    if (isExpired) {
+      await deleteDoc(doc(db, "otps", normalizedEmail));
+      console.log(`[OTP] OTP expired for ${normalizedEmail}`);
+      return res.status(400).json({ error: "Verification code has expired. Please request a new one." });
+    }
+
+    if (entry.otp !== otp) {
+      console.log(`[OTP] Mismatch for ${normalizedEmail}. Expected: ${entry.otp}, Got: ${otp}`);
+      return res.status(400).json({ error: "Invalid verification code" });
+    }
+
+    // Success
+    await deleteDoc(doc(db, "otps", normalizedEmail));
+    console.log(`[OTP] Successfully verified ${normalizedEmail}`);
     res.json({ success: true, message: "OTP verified" });
-  } else {
-    res.status(400).json({ error: "Invalid or expired OTP" });
+  } catch (error) {
+    console.error("[OTP] Firestore Verification Error:", error);
+    res.status(500).json({ error: "Internal server error during verification" });
   }
 });
 
