@@ -22,6 +22,26 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage, handleFirestoreError, OperationType } from '../firebase';
 import { UserProfile, Event } from '../types';
 import MainLayout from './MainLayout';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+
+// Fix Leaflet marker icons in React
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl,
+  iconUrl,
+  shadowUrl,
+});
+
+interface LocationResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+}
 
 interface EventsProps {
   profile: UserProfile | null;
@@ -41,10 +61,41 @@ export default function Events({ profile }: EventsProps) {
     startTime: '',
     endTime: '',
     location: '',
+    lat: undefined as number | undefined,
+    lng: undefined as number | undefined,
     imageUrl: ''
   });
+  
+  // Location Autocomplete State
+  const [locationResults, setLocationResults] = useState<LocationResult[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [forceHideDropdown, setForceHideDropdown] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [searchParams] = useSearchParams();
   const formRef = useRef<HTMLDivElement>(null);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState(`Location: ${profile?.city || 'Lagos'}`);
+  const filterRef = useRef<HTMLDivElement>(null);
+  
+  // Close filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredEvents = events.filter(e => 
+    e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.location.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
 
   useEffect(() => {
     const loadEvents = async () => {
@@ -88,6 +139,46 @@ export default function Events({ profile }: EventsProps) {
     }
   };
 
+  const handleLocationSearch = (query: string) => {
+    setForceHideDropdown(false);
+    setNewEvent(prev => ({ 
+      ...prev, 
+      location: query,
+      // Only reset coordinates if the input is completely cleared
+      ...(query.trim() === '' ? { lat: undefined, lng: undefined } : {}) 
+    }));
+    
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    
+    if (!query.trim()) {
+      setLocationResults([]);
+      return;
+    }
+
+    setIsSearchingLocation(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`);
+        const data = await response.json();
+        setLocationResults(data);
+      } catch (err) {
+        console.error('Error fetching locations:', err);
+      } finally {
+        setIsSearchingLocation(false);
+      }
+    }, 500);
+  };
+
+  const selectLocation = (result: LocationResult) => {
+    setNewEvent(prev => ({
+      ...prev,
+      location: result.display_name,
+      lat: parseFloat(result.lat),
+      lng: parseFloat(result.lon)
+    }));
+    setLocationResults([]);
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
@@ -110,6 +201,8 @@ export default function Events({ profile }: EventsProps) {
         startTime: Timestamp.fromDate(new Date(newEvent.startTime)),
         endTime: Timestamp.fromDate(new Date(newEvent.endTime)),
         location: newEvent.location,
+        lat: newEvent.lat || null,
+        lng: newEvent.lng || null,
         imageUrl: finalImageUrl || '',
         creatorId: auth.currentUser.uid,
         updatedAt: serverTimestamp()
@@ -135,7 +228,7 @@ export default function Events({ profile }: EventsProps) {
         setEvents(prev => [createdEvent, ...prev]);
       }
       
-      setNewEvent({ title: '', description: '', startTime: '', endTime: '', location: '', imageUrl: '' });
+      setNewEvent({ title: '', description: '', startTime: '', endTime: '', location: '', lat: undefined, lng: undefined, imageUrl: '' });
       setImageFile(null);
       setPreviewUrl(null);
       setShowForm(false);
@@ -162,6 +255,8 @@ export default function Events({ profile }: EventsProps) {
       startTime: formatDateForInput(start),
       endTime: formatDateForInput(end),
       location: event.location,
+      lat: event.lat,
+      lng: event.lng,
       imageUrl: event.imageUrl || ''
     });
     setPreviewUrl(event.imageUrl || null);
@@ -213,255 +308,426 @@ export default function Events({ profile }: EventsProps) {
     setShowForm(false);
     setImageFile(null);
     setPreviewUrl(null);
-    setNewEvent({ title: '', description: '', startTime: '', endTime: '', location: '', imageUrl: '' });
+    setNewEvent({ title: '', description: '', startTime: '', endTime: '', location: '', lat: undefined, lng: undefined, imageUrl: '' });
   };
 
   return (
     <MainLayout profile={profile}>
-      <div className="max-w-7xl mx-auto p-8 space-y-12 h-full flex flex-col">
-        {/* Page Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 shrink-0">
-          <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight flex items-center gap-4">
-              {showForm ? (
-                <button onClick={() => setShowForm(false)} className="p-2 hover:bg-white/5 rounded-full transition-all text-gray-400">
-                  <ChevronRight className="w-8 h-8 rotate-180" />
+      <div className="flex flex-col h-full bg-[#090a1e] overflow-y-auto custom-scrollbar">
+        {/* Top Control Bar */}
+        <div 
+          className="p-4 sm:p-8 shrink-0 relative z-30 border-b border-white/5"
+          style={{ background: 'linear-gradient(180deg, #0A0A1A 0%, #190033 100%)' }}
+        >
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 max-w-[1400px] mx-auto w-full">
+            <div className="flex items-center gap-3 w-full md:w-auto flex-1">
+              {/* Search Box */}
+              <div className="relative w-full max-w-full md:max-w-[400px] lg:max-w-[500px] group">
+                <input 
+                  type="text"
+                  placeholder="Search events"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-[#130628] border border-white/20 rounded-full pl-6 pr-12 py-3 sm:py-4 text-white hover:border-white/40 focus:outline-none focus:border-purple-500/50 transition-all text-sm font-medium"
+                />
+                <Search className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-purple-400 transition-colors" />
+              </div>
+
+              {/* Mobile Filter Button */}
+              <button 
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                className="md:hidden w-12 h-12 shrink-0 flex items-center justify-center bg-[#130628] border border-white/20 rounded-full text-white hover:bg-white/5 active:scale-95 transition-all"
+              >
+                <div className="flex flex-col gap-1 items-end w-4">
+                  <span className="w-full h-[1.5px] bg-gray-400 rounded-full"></span>
+                  <span className="w-3/4 h-[1.5px] bg-gray-400 rounded-full"></span>
+                  <span className="w-1/2 h-[1.5px] bg-gray-400 rounded-full"></span>
+                </div>
+              </button>
+            </div>
+
+            {/* Desktop Controls */}
+            <div className="hidden md:flex items-center gap-4 lg:gap-8">
+              {/* Filter Control */}
+              <div className="relative" ref={filterRef}>
+                <button 
+                  onClick={() => setIsFilterOpen(!isFilterOpen)}
+                  className="w-auto flex items-center justify-center gap-2 px-8 py-4 bg-[#130628] border border-white/5 rounded-full hover:border-purple-500/30 transition-all group whitespace-nowrap"
+                >
+                  <Users className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-bold text-gray-300">Filter By : Location</span>
+                  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isFilterOpen ? 'rotate-90' : 'md:rotate-0'}`} />
                 </button>
-              ) : (
-                <Calendar className="w-10 h-10 text-purple-500" />
+
+                {/* Filter Dropdown Menu */}
+                {isFilterOpen && (
+                  <div className="absolute top-full mt-2 left-0 lg:left-auto lg:right-0 w-full lg:w-64 bg-[#130628] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                    {[
+                      { icon: MapPin, label: 'Filter by location' },
+                      { icon: Users, label: 'Filter by price' },
+                      { icon: Users, label: 'Filter by category' },
+                      { icon: Calendar, label: 'Filter by Date' }
+                    ].map((item, idx) => (
+                      <button 
+                        key={idx}
+                        className={`w-full flex items-center gap-3 px-6 py-4 transition-all text-[13px] font-bold ${
+                          idx === 0 ? 'text-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                        }`}
+                        style={idx === 0 ? { background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' } : {}}
+                      >
+                        <item.icon className="w-3.5 h-3.5" />
+                        <span>{item.label}</span>
+                        {idx === 0 && <ChevronRight className="w-3.5 h-3.5 ml-auto" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Post Event Button (Desktop Only) */}
+              {!showForm && profile?.isPro && (
+                <button 
+                  onClick={() => setShowForm(true)}
+                  className="hidden md:flex items-center justify-center gap-2 px-10 py-4 text-white rounded-full font-bold text-[14px] transition-all active:scale-95 whitespace-nowrap"
+                  style={{ background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' }}
+                >
+                  Post an event
+                </button>
               )}
-              {showForm ? (editingEventId ? 'Edit Event' : 'New Event') : 'Events'}
-            </h1>
-            <p className="text-gray-500 font-medium tracking-tight">
-              {showForm ? 'Post a fresh event on the community wall.' : 'Discover and join events in your community.'}
-            </p>
+            </div>
           </div>
-          {!showForm && profile?.isPro && (
-            <button 
-              onClick={() => setShowForm(true)}
-              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold transition-all active:scale-[0.98] flex items-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Create Event
-            </button>
+
+          {/* Active Filters Row */}
+          {activeFilter && (
+            <div className="max-w-[1400px] mx-auto w-full flex flex-wrap gap-2 px-1 mt-6">
+              <div className="bg-[#1a0b2e] border border-purple-500/30 px-3 py-1.5 rounded-full flex items-center gap-2">
+                <span className="text-[11px] font-bold text-white">{activeFilter}</span>
+                <button 
+                  onClick={() => setActiveFilter('')} 
+                  className="text-purple-400 hover:text-white transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center py-20">
-            <Loader2 className="w-12 h-12 text-purple-500 animate-spin" />
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0">
-            {showForm ? (
-              <div className="max-w-4xl mx-auto h-full overflow-y-auto pb-12">
-                <div className="space-y-10 p-2">
+        {/* Content Area */}
+        <div className="flex-1 px-4 sm:px-8 pt-6 sm:pt-10 pb-32">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-4">
+              <Loader2 className="w-12 h-12 text-purple-500 animate-spin" />
+              <p className="text-gray-500 font-bold tracking-widest text-xs uppercase">Gathering Events...</p>
+            </div>
+          ) : showForm ? (
+            <div className="max-w-4xl mx-auto py-12 animate-in fade-in slide-in-from-bottom-4">
+              {/* Reuse existing form logic */}
+              <div className="border border-white/5 rounded-3xl p-8 sm:p-12 space-y-10">
+                <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <h2 className="text-2xl font-bold tracking-tight text-white/90">
+                    <h2 className="text-3xl font-bold tracking-tight text-white">
                       {editingEventId ? 'Refine Event' : 'Host Event'}
                     </h2>
-                    <p className="text-sm text-gray-500 font-medium tracking-tight">
-                      Fill in the details below to broadcast your experience.
-                    </p>
+                    <p className="text-gray-500 font-medium">Broadcast your community experience.</p>
+                  </div>
+                  <button onClick={cancelEdit} className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-all">
+                    <X className="w-6 h-6 text-gray-400" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateEvent} className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      <label className="text-sm font-semibold text-gray-400 px-1">Visual Preview</label>
+                      <div className="aspect-[4/3] w-full bg-white/5 border-2 border-dashed border-white/10 rounded-3xl overflow-hidden relative group cursor-pointer hover:border-purple-500/50 transition-all">
+                        {previewUrl ? (
+                          <>
+                            <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <button type="button" onClick={() => { setImageFile(null); setPreviewUrl(null); }} className="p-4 bg-rose-500 rounded-2xl text-white shadow-xl">
+                                <Trash2 className="w-6 h-6" />
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <label className="absolute inset-0 flex flex-col items-center justify-center gap-4 cursor-pointer">
+                            <div className="w-14 h-14 bg-purple-500/20 rounded-2xl flex items-center justify-center text-purple-500">
+                              <Upload className="w-7 h-7" />
+                            </div>
+                            <span className="text-sm font-medium text-gray-400 text-center px-6">Tap to upload captivating artwork</span>
+                            <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                          </label>
+                        )}
+                      </div>
+                      <input 
+                        type="url" 
+                        placeholder="Or provide a direct image link..."
+                        value={newEvent.imageUrl}
+                        onChange={(e) => setNewEvent({ ...newEvent, imageUrl: e.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none text-sm"
+                      />
+                    </div>
                   </div>
 
-                  <form onSubmit={handleCreateEvent} className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                    <div className="space-y-8">
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      <label className="text-sm font-semibold text-gray-400 px-1">Event Essence</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="What's the name?"
+                        value={newEvent.title}
+                        onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                      />
+                      <textarea 
+                        required
+                        placeholder="Paint a picture for the attendees..."
+                        value={newEvent.description}
+                        onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none h-40 resize-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-4">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">Visual Preview</label>
-                        <div className="aspect-video w-full bg-white/5 border-2 border-dashed border-white/10 rounded-3xl overflow-hidden relative group cursor-pointer hover:border-purple-500/50 transition-all">
-                          {previewUrl ? (
-                            <>
-                              <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <button type="button" onClick={() => { setImageFile(null); setPreviewUrl(null); }} className="p-3 bg-rose-500 rounded-2xl text-white">
-                                  <X className="w-5 h-5" />
-                                </button>
-                              </div>
-                            </>
+                        <label className="text-sm font-semibold text-gray-400 px-1">Commences</label>
+                        <div className="flex gap-2">
+                          <input 
+                            required
+                            type="date" 
+                            value={newEvent.startTime.split('T')[0] || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const t = newEvent.startTime.split('T')[1]?.slice(0,5) || '12:00';
+                              setNewEvent({ ...newEvent, startTime: v ? `${v}T${t}` : '' });
+                            }}
+                            className="w-1/2 bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white text-xs hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                          />
+                          <input 
+                            required
+                            type="time" 
+                            value={newEvent.startTime.split('T')[1]?.slice(0,5) || ''}
+                            onChange={(e) => {
+                              const t = e.target.value;
+                              const v = newEvent.startTime.split('T')[0] || new Date().toISOString().split('T')[0];
+                              setNewEvent({ ...newEvent, startTime: t ? `${v}T${t}` : '' });
+                            }}
+                            className="w-1/2 bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white text-xs hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-sm font-semibold text-gray-400 px-1">Concludes</label>
+                        <div className="flex gap-2">
+                          <input 
+                            required
+                            type="date" 
+                            value={newEvent.endTime.split('T')[0] || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const t = newEvent.endTime.split('T')[1]?.slice(0,5) || '14:00';
+                              setNewEvent({ ...newEvent, endTime: v ? `${v}T${t}` : '' });
+                            }}
+                            className="w-1/2 bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white text-xs hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                          />
+                          <input 
+                            required
+                            type="time" 
+                            value={newEvent.endTime.split('T')[1]?.slice(0,5) || ''}
+                            onChange={(e) => {
+                              const t = e.target.value;
+                              const v = newEvent.endTime.split('T')[0] || new Date().toISOString().split('T')[0];
+                              setNewEvent({ ...newEvent, endTime: t ? `${v}T${t}` : '' });
+                            }}
+                            className="w-1/2 bg-white/5 border border-white/10 rounded-2xl px-4 py-4 text-white text-xs hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 relative">
+                      <label className="text-sm font-semibold text-gray-400 px-1">Venue</label>
+                      <div className="relative">
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="Search for a location..."
+                          value={newEvent.location}
+                          onChange={(e) => handleLocationSearch(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
+                        />
+                        {isSearchingLocation && (
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                            <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Autocomplete Dropdown */}
+                      {!forceHideDropdown && (locationResults.length > 0 || (newEvent.location.trim() && !isSearchingLocation && locationResults.length === 0)) && (
+                        <div className="absolute top-[88px] left-0 w-full bg-[#130628] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 max-h-60 overflow-y-auto">
+                          {locationResults.length > 0 ? (
+                            locationResults.map((result) => (
+                              <button
+                                key={result.place_id}
+                                type="button"
+                                onClick={() => {
+                                  selectLocation(result);
+                                  setForceHideDropdown(true);
+                                }}
+                                className="w-full text-left px-6 py-3 hover:bg-white/5 border-b border-white/5 last:border-0 transition-colors"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <MapPin className="w-4 h-4 text-purple-400 mt-1 flex-shrink-0" />
+                                  <span className="text-sm text-gray-300 line-clamp-2">{result.display_name}</span>
+                                </div>
+                              </button>
+                            ))
                           ) : (
-                            <label className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer">
-                              <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-purple-500">
-                                <Upload className="w-6 h-6" />
-                              </div>
-                              <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Click to upload image</span>
-                              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                            </label>
+                            <div className="px-6 py-4 text-sm text-gray-400">
+                              <span className="block font-medium text-white mb-2">No exact match for "{newEvent.location}"</span>
+                              <p className="mb-4">You can still use this location without a map. Or, to drop a pin, search for your city first, click it, and then edit this text.</p>
+                              <button 
+                                type="button"
+                                onClick={() => setForceHideDropdown(true)}
+                                className="w-full py-2.5 bg-purple-500/10 text-purple-400 font-bold rounded-xl hover:bg-purple-500/20 transition-colors border border-purple-500/20"
+                              >
+                                Use "{newEvent.location}" Anyway
+                              </button>
+                            </div>
                           )}
                         </div>
-                        <input 
-                          type="url" 
-                          placeholder="Or paste external Image URL..."
-                          value={newEvent.imageUrl}
-                          onChange={(e) => setNewEvent({ ...newEvent, imageUrl: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
-                        />
-                      </div>
+                      )}
 
-                      <div className="space-y-4 pt-4">
-                        <div className="flex gap-4">
-                          <button 
-                            type="button"
-                            onClick={cancelEdit}
-                            className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-gray-400 rounded-2xl font-bold transition-all active:scale-[0.98]"
+                      {/* Map Preview */}
+                      {newEvent.lat && newEvent.lng && (
+                        <div className="h-48 w-full rounded-2xl overflow-hidden border border-white/10 relative z-0 mt-4 animate-in fade-in slide-in-from-bottom-2">
+                          <MapContainer 
+                            center={[newEvent.lat, newEvent.lng]} 
+                            zoom={14} 
+                            style={{ height: '100%', width: '100%' }}
+                            key={`${newEvent.lat}-${newEvent.lng}`}
                           >
-                            Cancel
-                          </button>
-                          <button 
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="flex-[2] py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-                          >
-                            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : editingEventId ? 'Update Event' : 'Create Event'}
-                          </button>
+                            <TileLayer
+                              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                            />
+                            <Marker position={[newEvent.lat, newEvent.lng]} />
+                          </MapContainer>
                         </div>
-                      </div>
+                      )}
                     </div>
 
-                    <div className="space-y-8">
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">Details</label>
-                        <input 
-                          required
-                          type="text" 
-                          placeholder="Event Title..."
-                          value={newEvent.title}
-                          onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
-                        />
-                        <textarea 
-                          required
-                          placeholder="Event Description..."
-                          value={newEvent.description}
-                          onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none h-44 resize-none"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">Start Time</label>
-                          <input 
-                            required
-                            type="datetime-local" 
-                            value={newEvent.startTime}
-                            onChange={(e) => setNewEvent({ ...newEvent, startTime: e.target.value })}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">End Time</label>
-                          <input 
-                            required
-                            type="datetime-local" 
-                            value={newEvent.endTime}
-                            onChange={(e) => setNewEvent({ ...newEvent, endTime: e.target.value })}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">Location</label>
-                        <input 
-                          required
-                          type="text" 
-                          placeholder="Where is the event?..."
-                          value={newEvent.location}
-                          onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white hover:bg-white/10 focus:border-purple-500/50 transition-all outline-none"
-                        />
-                      </div>
+                    <div className="pt-4 flex gap-4">
+                      <button 
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="flex-1 py-5 bg-gradient-to-r from-[#9700FF] to-[#B95AFB] text-white rounded-2xl font-bold transition-all text-sm active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : editingEventId ? 'Update Event' : 'Launch Event'}
+                      </button>
                     </div>
-                  </form>
-                </div>
+                  </div>
+                </form>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8 pb-12">
-                {events.map((event) => (
-                  <div key={event.id} className="bg-white/5 border border-transparent rounded-2xl overflow-hidden group hover:border-purple-500/30 transition-all flex flex-col h-full relative">
-                    {/* Admin Actions */}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 max-w-[1400px] mx-auto gap-4 sm:gap-8 pb-20">
+              {filteredEvents.map((event) => (
+                <div key={event.id} className="flex flex-col rounded-none overflow-hidden bg-[#222222] group hover:border-purple-500/20 transition-all duration-500 border border-transparent">
+                  {/* Event Image */}
+                  <div className="relative aspect-[16/10] overflow-hidden">
+                    {event.imageUrl ? (
+                      <img 
+                        src={event.imageUrl} 
+                        alt={event.title}
+                        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-purple-900/60 to-indigo-900/60 flex items-center justify-center">
+                        <Calendar className="w-12 h-12 text-white/10" />
+                      </div>
+                    )}
+                    
+                    {/* Admin Actions Overlay */}
                     {auth.currentUser?.uid === event.creatorId && (
-                      <div className="absolute top-6 left-6 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={() => handleEditClick(event)}
-                          className="p-3 bg-white/10 backdrop-blur-md rounded-2xl hover:bg-purple-600 transition-all border border-white/10 text-white"
+                          className="p-2.5 bg-black/40 backdrop-blur-md rounded-xl hover:bg-purple-600 transition-all text-white border border-white/10"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => handleDeleteEvent(event.id)}
-                          className="p-3 bg-white/10 backdrop-blur-md rounded-2xl hover:bg-rose-600 transition-all border border-white/10 text-white"
+                          className="p-2.5 bg-black/40 backdrop-blur-md rounded-xl hover:bg-rose-600 transition-all text-white border border-white/10"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     )}
+                  </div>
 
-                    <div className="h-56 relative overflow-hidden">
-                      {event.imageUrl ? (
-                        <img 
-                          src={event.imageUrl} 
-                          alt={event.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-purple-900/40 to-indigo-900/40" />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                      
-                      <div className="absolute top-6 right-6 bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 flex items-center gap-2 text-xs font-bold leading-none text-white">
-                        <Users className="w-3.5 h-3.5 text-purple-400" />
-                        {event.attendees?.length || 0} members
-                      </div>
-                      
-                      <div className="absolute bottom-6 left-6 right-6">
-                        <h3 className="text-2xl font-bold tracking-tight leading-tight text-white">{event.title}</h3>
-                      </div>
-                    </div>
-                    
-                    <div className="p-8 space-y-6 flex-1 flex flex-col justify-between">
-                      <p className="text-gray-400 text-sm line-clamp-3 font-medium leading-relaxed">
+                  {/* Event Info */}
+                  <div className="p-3 sm:p-5 flex flex-col flex-1">
+                    <div className="space-y-1 sm:space-y-2">
+                      <h3 className="text-[10px] sm:text-base font-bold text-white tracking-tight line-clamp-1">{event.title}</h3>
+                      <p className="text-[8px] sm:text-sm text-gray-400 font-medium leading-relaxed line-clamp-3 sm:line-clamp-2">
                         {event.description}
                       </p>
-                      
-                      <div className="space-y-4">
-                        <div className="space-y-3 px-1">
-                          <div className="flex items-center gap-3.5 text-xs text-gray-500 font-semibold tracking-wide uppercase">
-                            <Clock className="w-4 h-4 text-purple-500 shrink-0" />
-                            <div className="flex flex-col">
-                              <span>{event.startTime?.toDate ? event.startTime.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(event.startTime).toLocaleString()}</span>
-                              <span className="opacity-40 text-[10px]">to {event.endTime?.toDate ? event.endTime.toDate().toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' }) : new Date(event.endTime).toLocaleString()}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3.5 text-xs text-gray-500 font-semibold tracking-wide uppercase">
-                            <MapPin className="w-4 h-4 text-purple-500 shrink-0" />
-                            {event.location}
-                          </div>
-                        </div>
+                    </div>
 
-                        {auth.currentUser && (event.attendees?.includes(auth.currentUser.uid)) ? (
-                          <button 
-                            onClick={() => handleLeaveEvent(event.id)}
-                            className="w-full py-4.5 bg-white/5 hover:bg-rose-500/10 text-gray-400 hover:text-rose-500 rounded-2xl font-bold transition-all border border-white/5 hover:border-rose-500/20 active:scale-[0.98]"
+                    <div className="mt-auto pt-3 sm:pt-4 space-y-3 sm:space-y-5">
+                      <div className="text-[8px] sm:text-xs font-medium text-gray-400 tracking-wide flex items-center gap-1.5 sm:gap-2">
+                        <span>{event.startTime?.toDate ? event.startTime.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(event.startTime).toDateString()}</span>
+                        <span className="opacity-30">|</span>
+                        <span>{event.startTime?.toDate ? event.startTime.toDate().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : new Date(event.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).replace(' ', '')}</span>
+                      </div>
+
+                      {event.lat && event.lng && (
+                        <div className="h-32 w-full rounded-2xl overflow-hidden mt-2 relative z-0 border border-white/5">
+                          <MapContainer 
+                            center={[event.lat, event.lng]} 
+                            zoom={13} 
+                            style={{ height: '100%', width: '100%' }}
+                            dragging={false} zoomControl={false} scrollWheelZoom={false} doubleClickZoom={false}
                           >
-                            Leave Event
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={() => handleJoinEvent(event.id)}
-                            className="w-full py-4.5 bg-purple-600 hover:bg-purple-700 rounded-2xl font-bold transition-all active:scale-[0.98] text-white"
-                          >
-                            Join Event
-                          </button>
-                        )}
+                            <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+                            <Marker position={[event.lat, event.lng]} />
+                          </MapContainer>
+                        </div>
+                      )}
+
+                      <div className="flex items-center">
+                        <button 
+                          onClick={() => handleJoinEvent(event.id)}
+                          disabled={event.attendees?.includes(auth.currentUser?.uid || '')}
+                          className={`px-4 sm:px-8 py-1.5 sm:py-3 rounded-full text-[8px] sm:text-xs font-semibold transition-all active:scale-[0.98] border ${
+                            event.attendees?.includes(auth.currentUser?.uid || '')
+                            ? 'border-green-500/50 text-green-400 bg-green-500/5 cursor-default'
+                            : 'border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white'
+                          }`}
+                        >
+                          {event.attendees?.includes(auth.currentUser?.uid || '') ? 'Registered' : 'Register for event'}
+                        </button>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Floating Action Button (Mobile Only) */}
+        {!showForm && profile?.isPro && (
+          <button 
+            onClick={() => setShowForm(true)}
+            className="md:hidden fixed bottom-24 right-6 px-6 py-3.5 bg-gradient-to-r from-[#9700FF] to-[#B95AFB] text-white rounded-full flex items-center justify-center shadow-2xl shadow-purple-500/40 active:scale-90 transition-transform z-40 font-bold text-sm tracking-wide"
+          >
+            Create an event
+          </button>
         )}
       </div>
     </MainLayout>

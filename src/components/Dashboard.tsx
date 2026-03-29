@@ -28,16 +28,22 @@ export default function Dashboard({ profile }: DashboardProps) {
   const navigate = useNavigate();
   const [discoveryProfiles, setDiscoveryProfiles] = useState<UserProfile[]>([]);
   const [matches, setMatches] = useState<UserProfile[]>([]);
-  const [received, setReceived] = useState<MatchRequest[]>([]);
+  const [sentLikes, setSentLikes] = useState<MatchRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [sidebarLoading, setSidebarLoading] = useState(true);
-  const [rightTab, setRightTab] = useState<'matches' | 'received'>('matches');
+  const [rightTab, setRightTab] = useState<'matches' | 'sent'>('matches');
 
   const loadDiscovery = async () => {
     setLoading(true);
     const data = await fetchMatchingProfiles(profile?.preferences?.interestedIn);
     if (data) {
-      const completed = data.filter(p => p.media && p.media.length > 0);
+      const isMobile = window.innerWidth < 768;
+      const completed = data.filter(p => {
+        if (!p.media || p.media.length === 0) return false;
+        // On mobile, only show profiles that have a video
+        if (isMobile) return p.media.some((m: any) => m.type === 'video');
+        return true;
+      });
       const withId = completed.map(p => ({ ...p, id: p.uid }));
       setDiscoveryProfiles(withId);
     }
@@ -47,12 +53,13 @@ export default function Dashboard({ profile }: DashboardProps) {
   const loadSidebarData = async () => {
     setSidebarLoading(true);
     try {
-      const [m, r] = await Promise.all([
+      const { fetchSentRequests } = await import('../utils/likesService');
+      const [m, s] = await Promise.all([
         fetchMatches(),
-        fetchReceivedRequests()
+        fetchSentRequests()
       ]);
       setMatches(m);
-      setReceived(r);
+      setSentLikes(s);
     } catch (err) {
       console.error('Error loading sidebar data:', err);
     } finally {
@@ -84,15 +91,13 @@ export default function Dashboard({ profile }: DashboardProps) {
     }
   };
 
-  const handleSidebarResponse = async (requestId: string, status: 'accepted' | 'rejected') => {
+  const handleRemoveSentRequest = async (requestId: string) => {
     try {
-      await respondToRequest(requestId, status);
-      setReceived(prev => prev.filter(r => r.id !== requestId));
-      if (status === 'accepted') {
-        loadSidebarData();
-      }
+      const { cancelMatchRequest } = await import('../utils/likesService');
+      await cancelMatchRequest(requestId);
+      setSentLikes(prev => prev.filter(r => r.id !== requestId));
     } catch (err) {
-      console.error('Error responding to request:', err);
+      console.error('Error removing sent request:', err);
     }
   };
 
@@ -146,15 +151,15 @@ export default function Dashboard({ profile }: DashboardProps) {
             )}
           </button>
           <button 
-            onClick={() => setRightTab('received')}
+            onClick={() => setRightTab('sent')}
             className={`flex-1 py-5 text-sm font-bold transition-all relative flex items-center justify-center gap-2 ${
-              rightTab === 'received' ? 'text-[#a855f7]' : 'text-gray-500 hover:text-white'
+              rightTab === 'sent' ? 'text-[#a855f7]' : 'text-gray-500 hover:text-white'
             }`}
           >
             <Heart className="w-4 h-4" />
             <span>My likes</span>
-            <span className="bg-white text-[#090a1e] px-1.5 py-0.5 rounded text-[10px] font-black">{received.length}</span>
-            {rightTab === 'received' && (
+            <span className="bg-white text-[#090a1e] px-1.5 py-0.5 rounded text-[10px] font-black">{sentLikes.length}</span>
+            {rightTab === 'sent' && (
               <motion.div layoutId={`${layoutPrefix}-tab`} className="absolute bottom-0 left-0 right-0 h-1 bg-[#a855f7]" />
             )}
           </button>
@@ -194,26 +199,28 @@ export default function Dashboard({ profile }: DashboardProps) {
                   <div className="py-12 text-center text-gray-500 text-xs">No matches yet</div>
                 )
               ) : (
-                received.length > 0 ? (
-                  received.map((req) => (
-                    <div key={req.id} className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-white/10">
+                sentLikes.length > 0 ? (
+                  sentLikes.map((req) => (
+                    <div key={req.id} className="flex items-center gap-3 group">
+                      <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-white/10 relative">
                         <img 
-                          src={req.fromUser?.media?.[0]?.url || `https://picsum.photos/seed/${req.fromUserId}/100/100`} 
+                          src={req.toUser?.media?.[0]?.url || `https://picsum.photos/seed/${req.toUserId}/100/100`} 
                           className="w-full h-full object-cover" 
                           alt="" 
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-[13px] font-bold text-white truncate">{req.fromUser?.firstName}</h4>
-                        <p className="text-[10px] text-gray-400">Sent a Match request</p>
+                        <h4 className="text-[13px] font-bold text-white truncate">{req.toUser?.firstName}</h4>
+                        <p className="text-[10px] text-gray-400">Match request sent</p>
                       </div>
-                      <button 
-                        onClick={() => navigate(`/profile/${req.fromUserId}`)}
-                        className="bg-[#a855f7] hover:bg-[#b875ff] text-white text-[9px] font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
-                      >
-                        View profile
-                      </button>
+                      <div className="flex gap-1.5">
+                        <button 
+                          onClick={() => navigate(`/profile/${req.toUserId}`)}
+                          className="bg-[#a855f7] hover:bg-[#b875ff] text-white text-[9px] font-bold px-3 py-2 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                        >
+                          View
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (

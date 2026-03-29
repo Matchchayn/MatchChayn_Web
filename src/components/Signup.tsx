@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-react';
+import envelopeOpen from '../assets/envelope-open.png';
 import { auth } from '../firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useAlert } from '../hooks/useAlert';
@@ -174,10 +175,10 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
 
   return (
     <AuthLayout 
-      title="Create Account"
-      subtitle="Start your journey today"
+      title={step === 'otp' || step === 'password' ? "" : "Create Account"}
+      subtitle={step === 'otp' || step === 'password' ? "" : "Start your journey today"}
     >
-      <div className="space-y-8">
+      <div className={step === 'otp' ? "space-y-2 sm:space-y-4" : "space-y-8"}>
         <AnimatePresence mode="wait">
           {step === 'email' && (
             <motion.form
@@ -204,24 +205,27 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                  <input
-                    type="checkbox"
-                    id="terms"
-                    checked={agreedToTerms}
-                    onChange={(e) => setAgreedToTerms(e.target.checked)}
-                    className="mt-1 w-5 h-5 rounded border-white/20 bg-white/5 text-purple-500 focus:ring-purple-500"
-                  />
-                  <label htmlFor="terms" className="text-sm text-gray-400 leading-tight">
-                    I agree to the{' '}
+                <div className="flex items-center gap-3">
+                  <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
+                    <input
+                      type="checkbox"
+                      id="terms"
+                      checked={agreedToTerms}
+                      onChange={(e) => setAgreedToTerms(e.target.checked)}
+                      className="peer w-5 h-5 rounded-[4px] border-2 border-white/60 bg-transparent appearance-none cursor-pointer checked:bg-transparent checked:border-white transition-all outline-none"
+                    />
+                    <Check className="absolute w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" strokeWidth={3} />
+                  </div>
+                  <label htmlFor="terms" className="text-sm text-white font-medium cursor-pointer">
+                    Agree with{' '}
                     <button
                       type="button"
                       onClick={() => setIsTermsModalOpen(true)}
-                      className="text-purple-500 font-bold hover:text-purple-400 transition-colors"
+                      className="text-white font-bold hover:underline transition-all"
                     >
                       Terms and Conditions
                     </button>{' '}
-                    and Privacy Policy.
+                    (18+ Only)
                   </label>
                 </div>
               </div>
@@ -229,10 +233,10 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
               <button
                 type="submit"
                 disabled={isLoading}
-                className="premium-button w-full h-12 flex items-center justify-center gap-2"
+                className="w-full text-white font-bold text-lg rounded-full h-12 sm:h-14 transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center"
+                style={{ background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' }}
               >
-                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Continue'}
-                {!isLoading && <ArrowRight className="w-5 h-5" />}
+                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Get Started'}
               </button>
 
               <p className="text-center text-gray-400 font-medium pt-4">
@@ -246,13 +250,10 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
                 </button>
               </p>
 
-              <div className="relative py-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/5"></div>
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase font-bold text-gray-600">
-                  <span className="bg-[#090a1e] px-4 tracking-widest">Or sign up with</span>
-                </div>
+              <div className="flex items-center gap-4 py-2">
+                <div className="flex-1 border-t border-white/20"></div>
+                <span className="text-xs text-white">or continue with</span>
+                <div className="flex-1 border-t border-white/20"></div>
               </div>
 
               <div className="flex justify-center gap-4">
@@ -293,14 +294,31 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               onSubmit={handleOtpVerify}
-              className="space-y-6"
+              className="space-y-4 sm:space-y-5"
             >
-              <div className="space-y-2 text-center">
-                <h2 className="text-2xl font-bold text-white">Verify Email</h2>
-                <p className="text-gray-400 text-sm">Enter the code sent to {email}</p>
+              {/* Back Button */}
+              <button 
+                type="button"
+                onClick={() => setStep('email')}
+                className="flex items-center gap-2 text-white hover:text-purple-400 transition-colors group mb-0 sm:mb-2"
+              >
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-purple-500/20 transition-all">
+                  <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                <span className="hidden sm:inline font-bold text-sm">Back</span>
+              </button>
+
+              <div className="flex flex-col items-center text-center space-y-2 sm:space-y-4">
+                <img src={envelopeOpen} alt="Mail Icon" className="w-12 h-12 sm:w-16 sm:h-16 object-contain" />
+                <div className="space-y-0.5 sm:space-y-1">
+                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">You've got a mail!</h2>
+                  <p className="text-gray-400 text-[11px] sm:text-xs max-w-[280px] sm:max-w-none mx-auto leading-relaxed">
+                    Check your inbox. Please enter the verification code sent to your email: <span className="text-white font-semibold">{email}</span>
+                  </p>
+                </div>
               </div>
 
-              <div className="flex justify-between gap-4">
+              <div className="flex justify-between gap-3 py-2 sm:py-4">
                 {otp.map((digit, index) => (
                   <input
                     key={index}
@@ -310,35 +328,40 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
                     value={digit}
                     onChange={(e) => handleOtpChange(index, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                    className="w-16 h-16 text-center text-2xl font-bold premium-input"
+                    className="w-12 h-12 sm:w-14 sm:h-14 text-center text-xl sm:text-2xl font-bold bg-transparent border-2 border-white/20 rounded-xl text-white outline-none focus:border-[#9700FF] focus:ring-4 focus:ring-[#9700FF]/20 transition-all"
                   />
                 ))}
+              </div>
+
+              <div className="text-center">
+                <p className="text-[10px] sm:text-xs text-gray-400 font-medium">
+                  Didn't receive an email?{' '}
+                  <button
+                    type="button"
+                    disabled={resendCooldown > 0 || isLoading}
+                    onClick={handleResendOtp}
+                    className="text-purple-500 font-bold hover:underline disabled:text-gray-600 transition-all"
+                  >
+                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
+                  </button>
+                </p>
               </div>
 
               <button
                 type="submit"
                 disabled={isLoading || otp.join('').length < 4}
-                className="premium-button w-full h-12 flex items-center justify-center gap-2"
+                className="w-full text-white font-bold text-lg rounded-full h-12 sm:h-14 transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center disabled:opacity-50"
+                style={{ background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' }}
               >
-                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Verify Code'}
+                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Verify Email'}
               </button>
 
-              <div className="flex flex-col gap-3">
-                <button
-                  type="button"
-                  disabled={resendCooldown > 0 || isLoading}
-                  onClick={handleResendOtp}
-                  className="w-full text-purple-500 font-bold text-sm hover:text-purple-400 disabled:text-gray-600 transition-colors"
-                >
-                  {resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep('email')}
-                  className="w-full text-gray-500 font-bold text-sm hover:text-purple-400 transition-colors"
-                >
-                  Change Email
-                </button>
+              <div className="pt-4 text-center px-4">
+                <p className="text-[10px] sm:text-xs text-gray-400 font-medium">
+                  By continuing, you agree to matchchayn{' '}
+                  <a href="#" className="text-white underline font-bold">Terms of service</a>{' '}
+                  and <a href="#" className="text-white underline font-bold">Privacy Policy.</a>
+                </p>
               </div>
             </motion.form>
           )}
@@ -350,48 +373,93 @@ export default function Signup({ onSignupSuccess, onToggleLogin }: SignupProps) 
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               onSubmit={handlePasswordSetup}
-              className="space-y-6"
+              className="space-y-3 sm:space-y-4"
             >
-              <div className="space-y-2 text-left">
-                <label className="text-xs font-medium text-gray-500 tracking-wider ml-1">Create Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Create password"
-                    className="premium-input with-icon w-full pr-12 h-12"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
+              <div className="flex flex-col items-center text-center space-y-2 sm:space-y-4">
+                <div className="flex flex-col items-center gap-2">
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Set Password</h2>
+                  <p className="text-gray-400 text-[10px] sm:text-xs max-w-[300px] leading-relaxed">
+                    Secure your account by setting a password you'll remember.
+                  </p>
                 </div>
               </div>
 
-              <div className="space-y-3 bg-white/5 p-4 rounded-2xl border border-white/5">
-                {passwordRequirements.map((req, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm">
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center ${req.met ? 'bg-green-500/20 text-green-500' : 'bg-white/5 text-gray-600'}`}>
-                      <Check className="w-3 h-3" />
-                    </div>
-                    <span className={req.met ? 'text-green-500 font-medium' : 'text-gray-500'}>{req.label}</span>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-gray-500 tracking-wide ml-1">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      className="w-full bg-white/5 border-2 border-white/10 rounded-xl h-12 sm:h-14 px-4 text-white placeholder:text-white/20 outline-none focus:border-[#9700FF] focus:ring-4 focus:ring-[#9700FF]/10 transition-all pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                {/* Password Strength Meter */}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-4 gap-2">
+                    {[0, 1, 2, 3].map((i) => {
+                      const metCount = passwordRequirements.filter(r => r.met).length;
+                      const isActive = metCount > i;
+                      const colors = ['bg-rose-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
+                      return (
+                        <div key={i} className="space-y-1.5">
+                          <div className={`h-1.5 rounded-full transition-all duration-500 ${isActive ? colors[metCount - 1] : 'bg-white/10'}`} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between px-1">
+                    {['Poor', 'Weak', 'Normal', 'Strong'].map((label, idx) => (
+                      <span key={label} className={`text-[10px] font-bold transition-colors duration-300 ${passwordRequirements.filter(r => r.met).length === idx + 1 ? 'text-white' : 'text-gray-600'}`}>
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <button
                 type="submit"
                 disabled={isLoading || !passwordRequirements.every(req => req.met)}
-                className="premium-button w-full h-12 flex items-center justify-center gap-2"
+                className="w-full text-white font-bold text-lg rounded-full h-12 sm:h-14 transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center disabled:opacity-50"
+                style={{ background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' }}
               >
-                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Complete Signup'}
+                {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Set Password'}
               </button>
+
+              <div className="space-y-4 pt-4">
+                <p className="text-center text-xs text-gray-400 font-bold tracking-tight">Your password must contain the following:</p>
+                <div className="grid grid-cols-2 gap-y-3 gap-x-4 max-w-sm mx-auto">
+                  {passwordRequirements.map((req, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-[4px] border border-white/20 flex items-center justify-center transition-colors ${req.met ? 'bg-purple-600 border-purple-600' : 'bg-transparent'}`}>
+                        {req.met && <Check className="w-3 h-3 text-white" strokeWidth={4} />}
+                      </div>
+                      <span className={`text-[10px] sm:text-xs font-medium transition-colors ${req.met ? 'text-white' : 'text-gray-500'}`}>{req.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-8 text-center px-4">
+                <p className="text-[10px] sm:text-xs text-gray-400 font-medium">
+                  By continuing, you agree to matchchayn{' '}
+                  <a href="#" className="text-white underline font-bold">Terms of service</a>{' '}
+                  and <a href="#" className="text-white underline font-bold">Privacy Policy.</a>
+                </p>
+              </div>
             </motion.form>
           )}
         </AnimatePresence>

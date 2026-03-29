@@ -39,6 +39,8 @@ export interface Event {
   startTime: any;
   endTime: any;
   location: string;
+  lat?: number;
+  lng?: number;
   imageUrl?: string;
   creatorId: string;
   attendees: string[];

@@ -49,6 +49,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
 import { useAlert } from '../hooks/useAlert';
 import Swal from 'sweetalert2';
+import attachIcon from '../assets/attach-circle.png';
+import sendIcon from '../assets/Vector.png';
 
 interface Message {
   id: string;
@@ -192,6 +194,10 @@ export default function Messages({ profile }: MessagesProps) {
   // Media States
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [isMediaMenuOpen, setIsMediaMenuOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [blockDocId, setBlockDocId] = useState<string | null>(null);
+  const [blockedUsers, setBlockedUsers] = useState<{ blockDocId: string; profile: UserProfile }[]>([]);
+  const [showBlocked, setShowBlocked] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -201,6 +207,220 @@ export default function Messages({ profile }: MessagesProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close more menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setIsMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Load blocked users for sidebar
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const q = query(collection(db, 'blocks'), where('blockedBy', '==', uid));
+    const unsub = onSnapshot(q, async (snap) => {
+      const entries = await Promise.all(
+        snap.docs.map(async (d) => {
+          const blockedUid = d.data().blockedUser as string;
+          try {
+            const userSnap = await getDoc(doc(db, 'users', blockedUid));
+            if (userSnap.exists()) {
+              return { blockDocId: d.id, profile: userSnap.data() as UserProfile };
+            }
+          } catch { /* ignore */ }
+          return null;
+        })
+      );
+      setBlockedUsers(entries.filter(Boolean) as { blockDocId: string; profile: UserProfile }[]);
+    });
+    return () => unsub();
+  }, []);
+
+  // Check whether currently selected match is blocked by us
+  useEffect(() => {
+    setBlockDocId(null);
+    if (!selectedMatch || !auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const q = query(
+      collection(db, 'blocks'),
+      where('blockedBy', '==', uid),
+      where('blockedUser', '==', selectedMatch.uid)
+    );
+    getDocs(q).then(snap => {
+      if (!snap.empty) setBlockDocId(snap.docs[0].id);
+      else setBlockDocId(null);
+    });
+  }, [selectedMatch]);
+
+  // ── Dropdown Actions ────────────────────────────────────────────
+  const handleViewProfile = () => {
+    setIsMoreMenuOpen(false);
+    if (selectedMatch) navigate(`/profile/${selectedMatch.uid}`);
+  };
+
+  const handleUnmatch = async () => {
+    setIsMoreMenuOpen(false);
+    if (!selectedMatch || !auth.currentUser) return;
+
+    const result = await Swal.fire({
+      title: 'Unmatch?',
+      text: `Are you sure you want to unmatch with ${selectedMatch.firstName}? This cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#a855f7',
+      cancelButtonColor: '#374151',
+      confirmButtonText: 'Yes, unmatch',
+      cancelButtonText: 'Cancel',
+      background: '#130628',
+      color: '#fff',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const uid = auth.currentUser.uid;
+      const otherId = selectedMatch.uid;
+      // Find and delete the match document
+      const q = query(collection(db, 'matches'), where('users', 'array-contains', uid));
+      const snap = await getDocs(q);
+      const matchDoc = snap.docs.find(d => {
+        const users = d.data().users as string[];
+        return users.includes(otherId);
+      });
+      if (matchDoc) await deleteDoc(matchDoc.ref);
+
+      // Also delete the like that created it
+      const likeQ1 = query(collection(db, 'likes'), where('fromUserId', '==', uid), where('toUserId', '==', otherId));
+      const likeQ2 = query(collection(db, 'likes'), where('fromUserId', '==', otherId), where('toUserId', '==', uid));
+      const [s1, s2] = await Promise.all([getDocs(likeQ1), getDocs(likeQ2)]);
+      await Promise.all([...s1.docs, ...s2.docs].map(d => deleteDoc(d.ref)));
+
+      setSelectedMatch(null);
+      setMatches(prev => prev.filter(m => m.uid !== otherId));
+      showAlert('Unmatched successfully.', 'success');
+      navigate('/messages');
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to unmatch. Please try again.', 'error');
+    }
+  };
+
+  const handleBlock = async () => {
+    setIsMoreMenuOpen(false);
+    if (!selectedMatch || !auth.currentUser) return;
+
+    const result = await Swal.fire({
+      title: 'Block User?',
+      text: `${selectedMatch.firstName} won't be able to message you. You can unblock them anytime from this chat.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#374151',
+      confirmButtonText: 'Block',
+      cancelButtonText: 'Cancel',
+      background: '#130628',
+      color: '#fff',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const uid = auth.currentUser.uid;
+      const otherId = selectedMatch.uid;
+
+      // Write block record
+      const blockRef = await addDoc(collection(db, 'blocks'), {
+        blockedBy: uid,
+        blockedUser: otherId,
+        createdAt: serverTimestamp(),
+      });
+
+      // Update local state — user stays in chat, dropdown now shows Unblock
+      setBlockDocId(blockRef.id);
+      showAlert(`${selectedMatch.firstName} has been blocked.`, 'success');
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to block user. Please try again.', 'error');
+    }
+  };
+
+  const handleUnblock = async () => {
+    setIsMoreMenuOpen(false);
+    if (!blockDocId || !selectedMatch || !auth.currentUser) return;
+    try {
+      const uid = auth.currentUser.uid;
+      const otherId = selectedMatch.uid;
+
+      await deleteDoc(doc(db, 'blocks', blockDocId));
+      setBlockDocId(null);
+
+      // Recreate match if missing
+      const matchQ = query(collection(db, 'matches'), where('users', 'array-contains', uid));
+      const mSnap = await getDocs(matchQ);
+      const existingMatch = mSnap.docs.find(d => (d.data().users as string[]).includes(otherId));
+
+      if (!existingMatch) {
+        await addDoc(collection(db, 'matches'), {
+          users: [uid, otherId],
+          createdAt: serverTimestamp()
+        });
+      }
+
+      showAlert(`${selectedMatch.firstName} has been unblocked.`, 'success');
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to unblock user. Please try again.', 'error');
+    }
+  };
+
+  const handleReport = async () => {
+    setIsMoreMenuOpen(false);
+    if (!selectedMatch || !auth.currentUser) return;
+
+    const { value: reason } = await Swal.fire({
+      title: 'Report User',
+      input: 'select',
+      inputOptions: {
+        'harassment': 'Harassment or bullying',
+        'inappropriate': 'Inappropriate content',
+        'fake_profile': 'Fake profile',
+        'spam': 'Spam',
+        'other': 'Other',
+      },
+      inputPlaceholder: 'Select a reason',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#374151',
+      confirmButtonText: 'Submit Report',
+      cancelButtonText: 'Cancel',
+      background: '#130628',
+      color: '#fff',
+      inputValidator: (v) => !v ? 'Please select a reason' : null,
+    });
+
+    if (!reason) return;
+
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reportedBy: auth.currentUser.uid,
+        reportedUser: selectedMatch.uid,
+        reason,
+        createdAt: serverTimestamp(),
+      });
+      showAlert('Report submitted. Thank you for keeping the community safe.', 'success');
+    } catch (err) {
+      console.error(err);
+      showAlert('Failed to submit report. Please try again.', 'error');
+    }
+  };
+  // ────────────────────────────────────────────────────────────────
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -211,15 +431,16 @@ export default function Messages({ profile }: MessagesProps) {
   }, [messages]);
 
   useEffect(() => {
-    const loadMatches = async () => {
-      if (!auth.currentUser) return;
-      setLoading(true);
+    if (!auth.currentUser) return;
+    
+    setLoading(true);
+    const q = query(
+      collection(db, 'matches'),
+      where('users', 'array-contains', auth.currentUser.uid)
+    );
+
+    const unsubscribeMatches = onSnapshot(q, async (snapshot) => {
       try {
-        const q = query(
-          collection(db, 'matches'),
-          where('users', 'array-contains', auth.currentUser.uid)
-        );
-        const snapshot = await getDocs(q);
         const matchUserIds = snapshot.docs.map(d => {
           const users = d.data().users as string[];
           return users.find(id => id !== auth.currentUser!.uid);
@@ -256,15 +477,15 @@ export default function Messages({ profile }: MessagesProps) {
             }
           });
         });
-
       } catch (err) {
-        console.error('Error loading matches:', err);
+        console.error('Error loading matches snapshot:', err);
       } finally {
         setLoading(false);
       }
-    };
-    loadMatches();
-  }, [paramMatchId]);
+    });
+
+    return () => unsubscribeMatches();
+  }, [auth.currentUser?.uid, paramMatchId]);
 
   useEffect(() => {
     if (!selectedMatch || !auth.currentUser) return;
@@ -515,11 +736,11 @@ export default function Messages({ profile }: MessagesProps) {
     <MainLayout profile={profile} noScroll={true}>
       <div className="flex h-full font-sans overflow-hidden bg-[#090a1e]">
         {/* Matches List */}
-        <aside className={`w-80 border-r border-white/5 flex flex-col bg-[#090a1e]/60 backdrop-blur-xl ${selectedMatch ? 'hidden md:flex' : 'flex'}`}>
-          <div className="p-8 border-b border-white/5">
-            <h2 className="text-2xl font-bold tracking-tight text-white">Messages</h2>
+        <aside className={`w-full md:w-80 border-r border-white/5 flex flex-col bg-[#090a1e]/60 backdrop-blur-xl ${selectedMatch ? 'hidden md:flex' : 'flex'}`}>
+          <div className="px-4 sm:px-8 py-5 sm:py-8 border-b border-white/5">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Messages</h2>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loading ? (
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
@@ -529,6 +750,7 @@ export default function Messages({ profile }: MessagesProps) {
                 const chatId = [auth.currentUser?.uid, match.uid].sort().join('_');
                 const lastMsg = lastMessages[chatId];
                 const isActive = selectedMatch?.uid === match.uid;
+                const isUnread = lastMsg && lastMsg.senderId !== auth.currentUser?.uid && !lastMsg.isRead;
 
                 return (
                   <button
@@ -537,41 +759,49 @@ export default function Messages({ profile }: MessagesProps) {
                       setSelectedMatch(match);
                       navigate(`/messages/${match.uid}`);
                     }}
-                    className={`w-full p-4 rounded-2xl flex items-center gap-4 transition-all group border-2 ${
-                      isActive 
-                        ? 'bg-purple-500/10 border-purple-500' 
-                        : 'hover:bg-white/5 border-transparent'
-                    }`}
+                    className="w-full px-4 py-4 flex items-center gap-3 transition-all relative border-b border-white/5 hover:bg-white/5"
                   >
-                    <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/10 shrink-0">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/10 shrink-0 relative">
                       <img 
                         src={match.media?.[0]?.url || `https://picsum.photos/seed/${match.uid}/100/100`} 
                         alt="Avatar" 
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <div className="flex justify-between items-baseline gap-2 mb-1">
-                        <h3 className={`font-bold truncate text-sm ${isActive ? 'text-white' : 'text-gray-200'}`}>
+                    <div className="flex-1 text-left min-w-0 pr-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <h3 className="font-bold truncate text-sm sm:text-base text-white flex items-center gap-2">
                           {match.firstName} {match.lastName}
+                          {/* Green dot next to name from design */}
+                          <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 bg-green-500 rounded-full"></div>
                         </h3>
                         {lastMsg && (
-                          <span className="text-[9px] font-bold text-gray-500 whitespace-nowrap">
+                          <span className="text-[10px] sm:text-xs font-bold text-gray-400 whitespace-nowrap ml-2">
                             {getFormatRelativeTime(lastMsg.createdAt)}
                           </span>
                         )}
                       </div>
-                      <p className={`text-xs truncate font-medium flex items-center gap-1.5 ${isActive ? 'text-purple-300' : 'text-gray-500'}`}>
-                        {lastMsg ? (
-                          <>
-                            {lastMsg.type === 'image' && <ImageIcon className="w-3 h-3" />}
-                            {lastMsg.type === 'audio' && <Mic className="w-3 h-3" />}
-                            {lastMsg.type === 'text' ? lastMsg.text : (lastMsg.type === 'image' ? 'Sent a photo' : 'Voice note')}
-                          </>
-                        ) : (
-                          <span className="text-[10px] font-bold text-green-500">Active now</span>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs sm:text-sm truncate font-medium flex items-center gap-1.5 text-gray-400 flex-1">
+                          {lastMsg ? (
+                            <>
+                              {lastMsg.senderId === auth.currentUser?.uid && "You : "}
+                              {lastMsg.type === 'text' ? lastMsg.text : (lastMsg.type === 'image' ? 'Sent a photo' : 'Sent a voice note')}
+                            </>
+                          ) : (
+                            <span>Start a conversation</span>
+                          )}
+                        </p>
+                        {lastMsg && (
+                          <div className="flex-shrink-0 ml-2">
+                            {lastMsg.senderId === auth.currentUser?.uid ? (
+                              <CheckCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${lastMsg.isRead ? 'text-purple-500' : 'text-gray-500'}`} />
+                            ) : isUnread ? (
+                              <div className="w-4 h-4 sm:w-5 sm:h-5 bg-purple-600 rounded-full flex items-center justify-center text-[9px] sm:text-[10px] font-bold text-white">1</div>
+                            ) : null}
+                          </div>
                         )}
-                      </p>
+                      </div>
                     </div>
                   </button>
                 );
@@ -583,10 +813,67 @@ export default function Messages({ profile }: MessagesProps) {
               </div>
             )}
           </div>
+
+          {/* Blocked Users section */}
+          {blockedUsers.length > 0 && (
+            <div className="border-t border-white/5">
+              <button
+                onClick={() => setShowBlocked(p => !p)}
+                className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <span>BLOCKED ({blockedUsers.length})</span>
+                <span className="text-lg leading-none">{showBlocked ? '−' : '+'}</span>
+              </button>
+              {showBlocked && blockedUsers.map(({ blockDocId: bdId, profile: bp }) => (
+                <div key={bdId} className="px-4 py-3 flex items-center gap-3 border-b border-white/5">
+                  <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10 shrink-0">
+                    <img
+                      src={bp.media?.[0]?.url || `https://picsum.photos/seed/${bp.uid}/100/100`}
+                      alt="Avatar"
+                      className="w-full h-full object-cover opacity-50"
+                    />
+                  </div>
+                  <p className="flex-1 text-sm font-medium text-gray-400 truncate">
+                    {bp.firstName} {bp.lastName}
+                  </p>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const uid = auth.currentUser!.uid;
+                        const otherId = bp.uid;
+
+                        await deleteDoc(doc(db, 'blocks', bdId));
+                        if (blockDocId === bdId) setBlockDocId(null);
+                        
+                        // Recreate match if missing
+                        const matchQ = query(collection(db, 'matches'), where('users', 'array-contains', uid));
+                        const mSnap = await getDocs(matchQ);
+                        const existingMatch = mSnap.docs.find(d => (d.data().users as string[]).includes(otherId));
+
+                        if (!existingMatch) {
+                          await addDoc(collection(db, 'matches'), {
+                            users: [uid, otherId],
+                            createdAt: serverTimestamp()
+                          });
+                        }
+                        
+                        showAlert(`${bp.firstName} has been unblocked.`, 'success');
+                      } catch {
+                        showAlert('Failed to unblock. Please try again.', 'error');
+                      }
+                    }}
+                    className="text-xs font-bold text-purple-400 hover:text-purple-300 whitespace-nowrap transition-colors"
+                  >
+                    Unblock
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </aside>
 
         {/* Chat Area */}
-        <main className={`flex-1 flex flex-col min-w-0 relative ${!selectedMatch ? 'hidden md:flex' : 'flex'}`}>
+        <main className={`flex-1 flex flex-col min-w-0 relative border-l border-white/5 ${!selectedMatch ? 'hidden md:flex' : 'flex'}`}>
           {/* Ambient Background Glows */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-900/10 rounded-full blur-[120px]" />
@@ -594,40 +881,92 @@ export default function Messages({ profile }: MessagesProps) {
           </div>
 
           {selectedMatch ? (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               {/* Chat Header */}
-              <header className="relative z-20 h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#090a1e]/60 backdrop-blur-xl sticky top-0">
-                <div className="flex items-center gap-4">
+              <header className="relative z-20 h-16 sm:h-20 border-b border-white/5 flex items-center justify-between px-3 sm:px-8 bg-[#130628] sticky top-0">
+                <div className="flex items-center gap-3 sm:gap-4">
                   <button 
                     onClick={() => setSelectedMatch(null)}
-                    className="md:hidden p-2 hover:bg-white/5 rounded-full text-gray-400"
+                    className="md:hidden p-1 bg-white rounded-full text-black hover:bg-gray-200"
                   >
-                    <ChevronLeft className="w-6 h-6" />
+                    <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shrink-0">
+                  <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden shrink-0 border border-white/10">
                     <img 
                       src={selectedMatch.media?.[0]?.url || `https://picsum.photos/seed/${selectedMatch.uid}/100/100`} 
                       alt="Avatar" 
                       className="w-full h-full object-cover"
                     />
+                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-[#130628]"></div>
                   </div>
-                  <div>
-                    <h3 className="text-white font-bold">{selectedMatch.firstName} {selectedMatch.lastName}</h3>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-[10px] font-bold text-green-500">Online</span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg text-white font-bold">{selectedMatch.firstName} {selectedMatch.lastName}</h3>
+                    {selectedMatch.isPro && (
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 bg-[#a855f7] rounded-full flex items-center justify-center shrink-0">
+                        <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 sm:w-3 sm:h-3 fill-white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="hidden sm:flex items-center gap-3">
-                  <button className="p-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all font-bold"><Phone className="w-5 h-5" /></button>
-                  <button className="p-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all font-bold"><Video className="w-5 h-5" /></button>
-                  <button className="p-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all font-bold"><MoreVertical className="w-5 h-5" /></button>
+                <div className="flex items-center gap-2 sm:gap-4">
+                  <button className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-gray-300 hover:text-white border border-gray-600 rounded-full hover:bg-white/5 transition-all">
+                    <Video className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  <button className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-gray-300 hover:text-white border border-gray-600 rounded-full hover:bg-white/5 transition-all">
+                    <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  {/* More menu */}
+                  <div ref={moreMenuRef} className="relative">
+                    <button
+                      onClick={() => setIsMoreMenuOpen(prev => !prev)}
+                      className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center border rounded-full transition-all ${
+                        isMoreMenuOpen
+                          ? 'bg-white/10 border-white/30 text-white'
+                          : 'text-gray-300 hover:text-white border-gray-600 hover:bg-white/5'
+                      }`}
+                    >
+                      <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+
+                    {/* Dropdown */}
+                    {isMoreMenuOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-2xl overflow-hidden z-50">
+                        <button
+                          onClick={handleViewProfile}
+                          className="w-full px-4 py-3.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                        >
+                          View User Profile
+                        </button>
+                        <button
+                          onClick={handleUnmatch}
+                          className="w-full px-4 py-3.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                        >
+                          Unmatch
+                        </button>
+                        <button
+                          onClick={blockDocId ? handleUnblock : handleBlock}
+                          className={`w-full px-4 py-3.5 text-left text-sm font-semibold transition-colors border-b border-gray-100 ${
+                            blockDocId
+                              ? 'text-gray-800 hover:bg-gray-50'
+                              : 'text-red-500 hover:bg-red-50'
+                          }`}
+                        >
+                          {blockDocId ? 'Unblock' : 'Block'}
+                        </button>
+                        <button
+                          onClick={handleReport}
+                          className="w-full px-4 py-3.5 text-left text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          Report User Profile
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </header>
 
               {/* Messages List */}
-              <div className="relative z-10 flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+              <div className="relative z-10 flex-1 min-h-0 overflow-y-auto px-3 py-4 sm:p-8 space-y-3 sm:space-y-6 custom-scrollbar bg-[#090a1e]">
                 {messages.map((msg, index) => {
                   const isMe = msg.senderId === auth.currentUser?.uid;
                   const messageDate = msg.createdAt ? new Date(msg.createdAt.seconds * 1000) : new Date();
@@ -638,53 +977,56 @@ export default function Messages({ profile }: MessagesProps) {
                   return (
                     <React.Fragment key={msg.id || index}>
                       {isNewDay && (
-                        <div className="flex justify-center my-8">
-                          <span className="bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-bold text-gray-400 backdrop-blur-md">
-                            {new Date(messageDate).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                        <div className="flex justify-center my-6">
+                          <span className="bg-white px-3 py-1 rounded text-xs font-semibold text-gray-800 shadow-sm">
+                            {messageDate.toLocaleDateString() === new Date().toLocaleDateString() ? 'Today' : messageDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
                           </span>
                         </div>
                       )}
                       
                       <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300 group`}>
-                        <div className={`flex items-start gap-2 max-w-full ${isMe ? 'flex-row' : 'flex-row-reverse'}`}>
+                        <div className={`flex flex-col max-w-[82%] sm:max-w-[70%] lg:max-w-[60%] relative`}>
                           {isMe && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-2 shrink-0">
-                              {msg.type === 'text' && (
+                            <div className="absolute top-1/2 -translate-y-1/2 -left-14 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
+                               {msg.type === 'text' && (
                                 <button 
                                   onClick={() => {
                                     setEditingMessageId(msg.id);
                                     setNewMessage(msg.text || '');
                                   }}
-                                  className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                                  className="p-1.5 text-gray-400 hover:text-white transition-colors bg-white/5 rounded-full"
                                   title="Edit"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3 h-3" />
                                 </button>
                               )}
                               <button 
                                 onClick={() => handleDeleteMessage(msg.id)}
-                                className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                                className="p-1.5 text-gray-400 hover:text-red-400 transition-colors bg-white/5 rounded-full"
                                 title="Delete"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           )}
-                          <div className={`max-w-[75%] rounded-[24px] overflow-hidden relative ${
-                            isMe ? 'bg-purple-600 rounded-tr-none text-white' : 'bg-white/10 border border-white/10 rounded-tl-none text-gray-200'
+                          {/* Bubble */}
+                          <div className={`relative overflow-hidden shadow-sm min-w-[160px] ${
+                            isMe
+                              ? 'bg-[#f8edfe] text-gray-800 rounded-md rounded-tr-sm'
+                              : 'bg-white text-gray-800 rounded-md rounded-tl-sm'
                           }`}>
                             {msg.type === 'text' && (
-                              <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap">
+                              <div className="px-3.5 py-2.5 pb-6 text-sm leading-relaxed whitespace-pre-wrap">
                                 {msg.text}
                               </div>
                             )}
                             
                             {msg.type === 'image' && (
-                              <div className="p-1 relative group/img">
+                              <div className={`p-1 pb-6 relative group/img ${isMe ? 'bg-[#f8edfe]' : 'bg-white'}`}>
                                 <img 
                                   src={msg.mediaUrl} 
                                   alt="Media" 
-                                  className="rounded-2xl w-full max-h-[400px] object-cover hover:scale-[1.02] transition-transform duration-500 cursor-pointer" 
+                                  className="rounded-xl w-full max-h-[320px] sm:max-h-[400px] object-cover" 
                                   onClick={() => window.open(msg.mediaUrl, '_blank')}
                                 />
                                 <button 
@@ -701,23 +1043,24 @@ export default function Messages({ profile }: MessagesProps) {
                             )}
 
                             {msg.type === 'audio' && (
-                              <AudioPlayer url={msg.mediaUrl!} isMe={isMe} />
+                              <div className={`pb-6 ${isMe ? 'bg-[#f8edfe]' : 'bg-white'}`}>
+                                <AudioPlayer url={msg.mediaUrl!} isMe={isMe} />
+                              </div>
                             )}
+
+                            {/* Timestamp + read receipt inside bubble */}
+                            <div className={`absolute bottom-1.5 flex items-center gap-0.5 text-[9px] font-medium text-gray-400 ${isMe ? 'right-2' : 'left-2'}`}>
+                              {msg.editedAt && <span className="mr-0.5">(edited)</span>}
+                              <span>
+                                {msg.createdAt 
+                                  ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                                  : ''}
+                              </span>
+                              {isMe && (
+                                <CheckCheck className={`w-3 h-3 ml-0.5 ${msg.isRead ? 'text-[#a855f7]' : 'text-gray-400'}`} />
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        
-                        <div className={`mt-1.5 mx-2 flex items-center gap-1.5 text-[9px] font-bold opacity-40 ${isMe ? 'justify-end text-gray-300' : 'justify-start text-purple-300'}`}>
-                          {msg.editedAt && <span>(edited)</span>}
-                          <span>
-                            {msg.createdAt 
-                              ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : 'Sending...'}
-                          </span>
-                          {isMe && msg.isRead && (
-                            <span className="flex items-center gap-0.5 text-green-400 ml-1">
-                              <CheckCheck className="w-3 h-3" /> Seen
-                            </span>
-                          )}
                         </div>
                       </div>
                     </React.Fragment>
@@ -727,7 +1070,7 @@ export default function Messages({ profile }: MessagesProps) {
               </div>
 
               {/* Message Input Container */}
-              <div className="relative z-20 px-8 pb-8 pt-4 border-t border-white/5 bg-[#090a1e]/60 backdrop-blur-xl">
+              <div className="relative z-20 px-3 sm:px-6 py-3 sm:py-4 border-t border-white/10 bg-[#090a1e]/60 backdrop-blur-xl">
                 
                 {editingMessageId && (
                   <div className="absolute -top-10 left-8 right-8 flex items-center justify-between bg-purple-600/20 border border-purple-500/30 rounded-t-xl px-4 py-2 text-xs font-bold text-purple-200 backdrop-blur-md">
@@ -751,7 +1094,7 @@ export default function Messages({ profile }: MessagesProps) {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-[calc(100%+1rem)] left-8 p-3 rounded-2xl bg-[#090a1e]/90 backdrop-blur-3xl border border-white/10 shadow-2xl z-40 origin-bottom-left flex flex-col items-center"
+                      className="absolute bottom-[calc(100%+1rem)] left-4 sm:left-8 p-3 rounded-2xl bg-[#090a1e]/90 backdrop-blur-3xl border border-white/10 shadow-2xl z-40 origin-bottom-left flex flex-col items-center"
                     >
                       <button 
                         onClick={() => {
@@ -764,13 +1107,13 @@ export default function Messages({ profile }: MessagesProps) {
                       </button>
                       
                       {stagedMedia.type === 'image' && (
-                        <div className="w-40 h-40 rounded-xl overflow-hidden bg-black/50 ring-2 ring-purple-500/30">
+                        <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-xl overflow-hidden bg-black/50 ring-2 ring-purple-500/30">
                           <img src={stagedMedia.url} className="w-full h-full object-cover" alt="Preview" />
                         </div>
                       )}
                       
                       {stagedMedia.type === 'audio' && (
-                        <div className="bg-purple-900/40 rounded-xl overflow-hidden border border-purple-500/20 max-w-[280px]">
+                        <div className="bg-purple-900/40 rounded-xl overflow-hidden border border-purple-500/20 max-w-[240px] sm:max-w-[280px]">
                           <AudioPlayer url={stagedMedia.url} isMe={true} />
                         </div>
                       )}
@@ -785,7 +1128,7 @@ export default function Messages({ profile }: MessagesProps) {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-[calc(100%-1rem)] left-8 mb-4 z-30"
+                      className="absolute bottom-[calc(100%-1rem)] left-4 sm:left-8 mb-4 z-30"
                     >
                       <EmojiPicker 
                         theme={Theme.DARK}
@@ -793,8 +1136,8 @@ export default function Messages({ profile }: MessagesProps) {
                         emojiStyle={EmojiStyle.APPLE}
                         lazyLoadEmojis={true}
                         searchPlaceholder="Search emojis..."
-                        width={350}
-                        height={400}
+                        width={300}
+                        height={350}
                       />
                     </motion.div>
                   )}
@@ -807,19 +1150,19 @@ export default function Messages({ profile }: MessagesProps) {
                       initial={{ opacity: 0, x: -10, scale: 0.95 }}
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       exit={{ opacity: 0, x: -10, scale: 0.95 }}
-                      className="absolute bottom-[calc(100%-1rem)] left-8 mb-4 flex flex-col gap-2 z-30"
+                      className="absolute bottom-[calc(100%-1rem)] right-4 sm:right-8 mb-4 flex flex-col gap-2 z-30"
                     >
                       <button 
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-12 h-12 bg-purple-600 rounded-2xl flex items-center justify-center text-white hover:bg-purple-500 transition-all active:scale-95 group"
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600 rounded-2xl flex items-center justify-center text-white hover:bg-purple-500 transition-all active:scale-95 group shadow-lg"
                       >
-                        <ImageIcon className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
                       </button>
                       <button 
                         onClick={startRecording}
-                        className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white hover:bg-indigo-500 transition-all active:scale-95 group"
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white hover:bg-indigo-500 transition-all active:scale-95 group shadow-lg"
                       >
-                        <Mic className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <Mic className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
                       </button>
                     </motion.div>
                   )}
@@ -833,77 +1176,64 @@ export default function Messages({ profile }: MessagesProps) {
                   onChange={handleImageSelect}
                 />
 
-                <div className="relative flex items-center gap-3">
-                  <button 
-                    onClick={() => {
-                      setIsMediaMenuOpen(!isMediaMenuOpen);
-                      setIsEmojiOpen(false);
-                    }}
-                    className={`p-3.5 rounded-2xl transition-all active:scale-95 ${
-                      isMediaMenuOpen ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    <Plus className={`w-6 h-6 transition-transform duration-300 ${isMediaMenuOpen ? 'rotate-45' : ''}`} />
-                  </button>
-
-                  <div className="flex-1 relative group">
-                    {isRecording ? (
-                      <div className="w-full bg-purple-600/20 border border-purple-500/30 rounded-2xl px-6 py-4 flex items-center justify-between text-white animate-pulse">
-                        <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
-                          <span className="font-bold text-[10px]">Recording</span>
-                          <span className="font-mono text-xs">{formatTime(recordingTime)}</span>
-                        </div>
-                        <button onClick={stopRecording} className="text-white hover:text-red-400 transition-colors">
-                          <StopCircle className="w-6 h-6" />
-                        </button>
+                {/* Single Row Input Bar */}
+                <div className="flex items-center gap-2 border border-white/10 rounded-2xl px-3 sm:px-4 py-2 bg-white/5">
+                  {isRecording ? (
+                    <div className="flex-1 flex items-center justify-between text-white animate-pulse">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                        <span className="font-bold text-xs sm:text-sm">Recording...</span>
+                        <span className="font-mono text-xs sm:text-sm">{formatTime(recordingTime)}</span>
                       </div>
-                    ) : (
-                      <>
-                        <input 
-                          type="text" 
-                          placeholder="Type your message..."
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          onFocus={() => {
-                            setIsEmojiOpen(false);
-                            setIsMediaMenuOpen(false);
-                          }}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 pr-16 text-sm focus:border-purple-500 transition-all outline-none font-sans text-gray-100 placeholder:text-gray-600"
-                        />
-                        <button 
-                          onClick={() => {
-                            setIsEmojiOpen(!isEmojiOpen);
-                            setIsMediaMenuOpen(false);
-                          }}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-purple-400 transition-colors p-1"
-                        >
-                          <Smile className="w-6 h-6" />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      <button onClick={stopRecording} className="text-white hover:text-red-400 transition-colors">
+                        <StopCircle className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <input 
+                      type="text" 
+                      placeholder="Type your message here..."
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onFocus={() => {
+                        setIsEmojiOpen(false);
+                        setIsMediaMenuOpen(false);
+                      }}
+                      className="flex-1 bg-transparent border-none text-sm sm:text-base text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-0 min-w-0"
+                    />
+                  )}
 
                   {!isRecording && (
-                    <button 
-                      type="button"
-                      onClick={() => handleSendMessage()}
-                      disabled={(!newMessage.trim() && !stagedMedia) || mediaLoading}
-                      className="p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-2xl transition-all active:scale-95 shrink-0 flex items-center justify-center relative overflow-hidden"
-                    >
-                      {mediaLoading ? (
-                        <>
-                          <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                          <Loader2 className="w-6 h-6 animate-spin relative z-10" />
-                        </>
-                      ) : (
-                        <Send className="w-6 h-6" />
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsMediaMenuOpen(!isMediaMenuOpen);
+                          setIsEmojiOpen(false);
+                        }}
+                        className="hover:opacity-100 opacity-60 transition-all shrink-0"
+                        title="Attach Media"
+                      >
+                        <img src={attachIcon} alt="Attach" className="w-6 h-6 sm:w-7 sm:h-7 object-contain" />
+                      </button>
+
+                      <button 
+                        type="button"
+                        onClick={() => handleSendMessage()}
+                        disabled={(!newMessage.trim() && !stagedMedia) || mediaLoading}
+                        className="hover:opacity-100 opacity-60 disabled:opacity-30 transition-all shrink-0"
+                      >
+                        {mediaLoading ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                        ) : (
+                          <img src={sendIcon} alt="Send" className="w-[20px] h-[20px] object-contain" />
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6 opacity-30">
               <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center">

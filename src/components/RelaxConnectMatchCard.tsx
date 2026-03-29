@@ -55,7 +55,9 @@ export default function RelaxConnectMatchCard({ profile, onLike, onPass }: Relax
 
   const videoMedia = p.media?.find((m: any) => m.type === 'video');
   const imageMedia = p.media?.find((m: any) => m.type === 'image') || p.media?.[0];
-  const displayUrl = videoMedia?.url || imageMedia?.url || 'https://picsum.photos/seed/dating/800/1200';
+  const videoUrl = videoMedia?.url || null;
+  const imageUrl = imageMedia?.url || 'https://picsum.photos/seed/dating/800/1200';
+  const displayUrl = videoUrl || imageUrl; // desktop uses this
   const isVideo = !!videoMedia;
 
   return (
@@ -199,11 +201,11 @@ export default function RelaxConnectMatchCard({ profile, onLike, onPass }: Relax
         onClick={resetControlTimeout}
         className="md:hidden relative w-full aspect-[3/4] max-h-[640px] bg-[#11112b] rounded-3xl overflow-hidden shadow-2xl mx-auto"
       >
-        {/* Main Media Background */}
-        {isVideo ? (
+        {/* Main Media Background — mobile shows video only */}
+        {videoUrl ? (
           <video
             ref={videoRef}
-            src={displayUrl}
+            src={videoUrl}
             autoPlay
             loop
             muted
@@ -212,11 +214,10 @@ export default function RelaxConnectMatchCard({ profile, onLike, onPass }: Relax
             onClick={togglePlay}
           />
         ) : (
-          <img
-            src={displayUrl}
-            alt={name}
-            className="w-full h-full object-cover"
-          />
+          // No video uploaded — show a dark placeholder so the card still renders
+          <div className="w-full h-full bg-[#0d0d22] flex items-center justify-center">
+            <span className="text-white/30 text-sm font-medium">No video available</span>
+          </div>
         )}
 
         {/* Story Progress Bar Overlay */}

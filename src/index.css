@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --primary: #a855f7;
@@ -27,10 +28,18 @@ body {
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 3s ease-in-out infinite;
+}
+
 /* Premium Components */
 .premium-glass-card {
   background: rgba(18, 18, 43, 0.45);
-  backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 2rem;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
@@ -61,8 +70,8 @@ body {
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: white;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,8 +80,7 @@ body {
 }
 
 .social-auth-circle:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: #f3f4f6;
   transform: translateY(-2px) scale(1.05);
 }
 

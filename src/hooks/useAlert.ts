@@ -3,8 +3,8 @@ import Swal from 'sweetalert2';
 
 // Custom theme for SweetAlert2 to match Cyber-Midnight
 const swalConfig = {
-  background: '#1a1b3b',
-  color: '#ffffff',
+  background: '#ffffff',
+  color: '#000000',
   confirmButtonColor: '#a855f7', // purple-500
   cancelButtonColor: '#f43f5e',  // rose-500
   customClass: {

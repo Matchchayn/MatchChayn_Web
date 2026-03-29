@@ -102,13 +102,13 @@ export default function App() {
               ) : (
                 <AuthLayout
                   title={
-                    onboardingStep === 'profile' ? "About You" :
+                    onboardingStep === 'profile' ? "" :
                     onboardingStep === 'interests' ? "Your Interests" :
                     onboardingStep === 'preferences' ? "Matching Preferences" :
                     "Show Yourself"
                   }
                   subtitle={
-                    onboardingStep === 'profile' ? "Let's start with the basics" :
+                    onboardingStep === 'profile' ? "" :
                     onboardingStep === 'interests' ? "Tell us what you love to do" :
                     onboardingStep === 'preferences' ? "Who would you like to meet?" :
                     "Add some photos to your profile"

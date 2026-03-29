@@ -35,8 +35,8 @@ export default function Login({ onLoginSuccess, onToggleSignup, onForgotPassword
           </div>
         `,
         icon: 'warning',
-        background: '#1a1b3b',
-        color: '#ffffff',
+        background: '#ffffff',
+        color: '#000000',
         confirmButtonColor: '#a855f7',
         confirmButtonText: 'I Understand',
         customClass: {
@@ -108,8 +108,13 @@ export default function Login({ onLoginSuccess, onToggleSignup, onForgotPassword
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading} className="w-full premium-button h-12">
-          {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Sign in'}
+        <button 
+          type="submit" 
+          disabled={isLoading} 
+          className="w-full text-white font-bold text-lg rounded-full h-12 sm:h-14 transition-all hover:opacity-90 active:scale-[0.98] flex items-center justify-center"
+          style={{ background: 'linear-gradient(90deg, #9700FF 0%, #B95AFB 65.87%)' }}
+        >
+          {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Login'}
         </button>
       </form>
 
@@ -122,14 +127,13 @@ export default function Login({ onLoginSuccess, onToggleSignup, onForgotPassword
         </p>
       </div>
 
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
-        <div className="relative flex justify-center text-[10px] uppercase font-bold text-gray-600">
-          <span className="bg-[#090a1e] px-4">Social Login</span>
-        </div>
+      <div className="flex items-center gap-4 py-2 mt-4">
+        <div className="flex-1 border-t border-white/20"></div>
+        <span className="text-xs text-white">or continue with</span>
+        <div className="flex-1 border-t border-white/20"></div>
       </div>
 
-      <div className="flex justify-center gap-4">
+      <div className="flex justify-center gap-4 mt-2">
         <GoogleAuth
           onSuccess={(user) => onLoginSuccess?.(user)}
           onBeforeLogin={() => true}
@@ -144,6 +148,14 @@ export default function Login({ onLoginSuccess, onToggleSignup, onForgotPassword
           setIsLoading={setIsLoading}
           variant="circle"
         />
+      </div>
+
+      <div className="pt-8 text-center px-4">
+        <p className="text-[10px] sm:text-xs text-gray-400 font-medium">
+          By continuing, you agree to matchchayn{' '}
+          <a href="#" className="text-white underline font-bold">Terms of service</a>{' '}
+          and <a href="#" className="text-white underline font-bold">Privacy Policy.</a>
+        </p>
       </div>
 
     </AuthLayout>
