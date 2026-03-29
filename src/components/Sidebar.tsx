@@ -73,7 +73,7 @@ export default function Sidebar({ profile, isAdmin }: SidebarProps) {
         </nav>
 
         {/* Bottom Actions Section */}
-        <div className="mt-8 px-5 pb-6 space-y-4">
+        <div className="mt-8 px-5 pb-12 space-y-4">
           <div className="max-w-[200px] mx-auto space-y-4 pt-4 border-t border-white/5">
             <button 
               onClick={() => navigate('/settings')}
@@ -84,7 +84,7 @@ export default function Sidebar({ profile, isAdmin }: SidebarProps) {
             </button>
             <button 
               onClick={() => auth.signOut()}
-              className="w-full flex items-center gap-3 text-gray-400 transition-all group"
+              className="w-full flex items-center gap-3 text-gray-400 transition-all group mb-6"
             >
               <LogOut className="w-5 h-5 opacity-60 rotate-180" strokeWidth={2} />
               <span className="text-[14px] font-medium">Log out</span>

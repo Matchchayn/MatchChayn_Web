@@ -37,12 +37,10 @@ export default function Dashboard({ profile }: DashboardProps) {
     setLoading(true);
     const data = await fetchMatchingProfiles(profile?.preferences?.interestedIn);
     if (data) {
-      const isMobile = window.innerWidth < 768;
       const completed = data.filter(p => {
         if (!p.media || p.media.length === 0) return false;
-        // On mobile, only show profiles that have a video
-        if (isMobile) return p.media.some((m: any) => m.type === 'video');
-        return true;
+        // Strictly only show profiles that have a video
+        return p.media.some((m: any) => m.type === 'video');
       });
       const withId = completed.map(p => ({ ...p, id: p.uid }));
       setDiscoveryProfiles(withId);

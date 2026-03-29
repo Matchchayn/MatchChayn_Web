@@ -21,12 +21,11 @@ export default function MatchesLikes({ profile }: MatchesLikesProps) {
   // Helper to calculate age from DOB string
   const calculateAge = (dob: string) => {
     if (!dob) return 25;
-    const birthDate = new Date(dob);
-    const age = new Date().getFullYear() - birthDate.getFullYear();
-    const m = new Date().getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && new Date().getDate() < birthDate.getDate())) {
-      return age - 1;
-    }
+    const today = new Date();
+    const birth = new Date(dob);
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     return age;
   };
 
@@ -73,7 +72,8 @@ export default function MatchesLikes({ profile }: MatchesLikesProps) {
     const age = calculateAge(p.dateOfBirth);
     const name = `${p.firstName}, ${age}`;
     const bio = p.bio || 'Confident, open-minded and here for real vibes only.';
-    const displayUrl = p.media?.find(m => m.type === 'image')?.url || p.media?.[0]?.url || `https://picsum.photos/seed/${p.uid}/400/600`;
+    const videoUrl = p.media?.find(m => m.type === 'video')?.url;
+    const imageUrl = p.media?.find(m => m.type === 'image')?.url || p.media?.[0]?.url || `https://picsum.photos/seed/${p.uid}/400/600`;
 
     return (
       <div 
@@ -81,12 +81,24 @@ export default function MatchesLikes({ profile }: MatchesLikesProps) {
         className="relative aspect-[3/4] rounded-[12px] lg:rounded-[24px] overflow-hidden group cursor-pointer shadow-lg bg-[#11112b] border border-white/5"
         onClick={() => navigate(`/profile/${p.uid}`)}
       >
-        {/* Main Background Image */}
-        <img 
-          src={displayUrl} 
-          alt={p.firstName} 
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+        {/* Main Background Media (Video first) */}
+        {videoUrl ? (
+          <video
+            src={videoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <img 
+            src={imageUrl} 
+            alt={p.firstName} 
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        )}
 
         {/* Info Overlay at Bottom */}
         <div className="absolute bottom-2 left-2 right-2 lg:bottom-4 lg:left-4 lg:right-4 z-20">
@@ -162,16 +174,30 @@ export default function MatchesLikes({ profile }: MatchesLikesProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 lg:py-12 space-y-6 lg:space-y-12">
         <div className="flex flex-col gap-4 lg:gap-8">
           {/* Mobile Tabs */}
-          <div className="lg:hidden p-1 bg-[#a855f7] rounded-[16px] flex items-center w-full shadow-lg border border-[#c084fc]/50">
+          <div className="lg:hidden p-1 bg-[#a855f7] rounded-[20px] flex items-center w-full shadow-lg border border-[#c084fc]/50 sticky top-4 z-40">
              <button
-               onClick={() => setTab('received')}
-               className={`flex-1 py-3 flex justify-center items-center gap-2 rounded-[12px] text-sm font-bold transition-all ${
-                 tab === 'received' ? 'bg-white text-[#a855f7] shadow-sm' : 'text-white hover:bg-white/10'
+               onClick={() => setTab('matches')}
+               className={`flex-1 py-2.5 flex justify-center items-center gap-1.5 rounded-[16px] text-[11px] font-bold transition-all ${
+                 tab === 'matches' ? 'bg-white text-[#a855f7] shadow-sm scale-[1.02]' : 'text-white hover:bg-white/10'
                }`}
              >
-               <Heart className={`w-4 h-4 ${tab === 'received' ? 'text-[#a855f7] fill-[#a855f7]' : 'text-white fill-white'}`} />
+               <MessageCircle className={`w-3.5 h-3.5 ${tab === 'matches' ? 'text-[#a855f7]' : 'text-white'}`} />
+               Matches
+               <span className={`px-1 rounded-md text-[9px] min-w-[16px] ${
+                 tab === 'matches' ? 'bg-[#a855f7] text-white' : 'bg-white text-[#a855f7]'
+               }`}>
+                 {matches.length}
+               </span>
+             </button>
+             <button
+               onClick={() => setTab('received')}
+               className={`flex-1 py-2.5 flex justify-center items-center gap-1.5 rounded-[16px] text-[11px] font-bold transition-all ${
+                 tab === 'received' ? 'bg-white text-[#a855f7] shadow-sm scale-[1.02]' : 'text-white hover:bg-white/10'
+               }`}
+             >
+               <Heart className={`w-3.5 h-3.5 ${tab === 'received' ? 'text-[#a855f7] fill-[#a855f7]' : 'text-white fill-white'}`} />
                Liked me
-               <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
+               <span className={`px-1 rounded-md text-[9px] min-w-[16px] ${
                  tab === 'received' ? 'bg-[#a855f7] text-white' : 'bg-white text-[#a855f7]'
                }`}>
                  {received.length}
@@ -179,13 +205,13 @@ export default function MatchesLikes({ profile }: MatchesLikesProps) {
              </button>
              <button
                onClick={() => setTab('sent')}
-               className={`flex-1 py-3 flex justify-center items-center gap-2 rounded-[12px] text-sm font-bold transition-all ${
-                 tab === 'sent' ? 'bg-white text-[#a855f7] shadow-sm' : 'text-white hover:bg-white/10'
+               className={`flex-1 py-2.5 flex justify-center items-center gap-1.5 rounded-[16px] text-[11px] font-bold transition-all ${
+                 tab === 'sent' ? 'bg-white text-[#a855f7] shadow-sm scale-[1.02]' : 'text-white hover:bg-white/10'
                }`}
              >
-               <Heart className={`w-4 h-4 ${tab === 'sent' ? 'text-[#a855f7] fill-[#a855f7]' : 'text-white fill-white'}`} />
+               <Heart className={`w-3.5 h-3.5 ${tab === 'sent' ? 'text-[#a855f7] fill-[#a855f7]' : 'text-white fill-white'}`} />
                My likes
-               <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
+               <span className={`px-1 rounded-md text-[9px] min-w-[16px] ${
                  tab === 'sent' ? 'bg-[#a855f7] text-white' : 'bg-white text-[#a855f7]'
                }`}>
                  {sent.length}

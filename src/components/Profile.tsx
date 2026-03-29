@@ -45,6 +45,42 @@ export default function Profile({ profile }: ProfileProps) {
     loadProfile();
   }, [id]);
 
+  const handleShare = async () => {
+    const shareUrl = window.location.href;
+    const shareTitle = `Check out ${user?.firstName}'s profile on MatchChayn!`;
+    const shareText = `I found an interesting connection on MatchChayn. Vibe with ${user?.firstName}!`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        const { default: Swal } = await import('sweetalert2');
+        Swal.fire({
+          title: 'Link Copied!',
+          text: 'Profile link copied to clipboard.',
+          icon: 'success',
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 3000,
+          background: '#1a1a2e',
+          color: '#fff'
+        });
+      } catch (err) {
+        console.error('Error copying to clipboard:', err);
+      }
+    }
+  };
+
   const calculateAge = (dob: string) => {
     if (!dob) return null;
     const today = new Date();
@@ -87,7 +123,7 @@ export default function Profile({ profile }: ProfileProps) {
     <MainLayout profile={profile}>
       <div className="max-w-6xl mx-auto p-8 space-y-12">
         {/* Hero Section */}
-        <section className="relative h-[500px] rounded-2xl overflow-hidden group">
+        <section className="relative h-[400px] sm:h-[500px] rounded-2xl overflow-hidden group">
           <img 
             src={user.media?.[0]?.url || "https://picsum.photos/seed/profile/1200/600"} 
             alt="Cover" 
@@ -95,47 +131,50 @@ export default function Profile({ profile }: ProfileProps) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#050512] via-transparent to-transparent" />
           
-          <div className="absolute bottom-0 left-0 right-0 p-12 flex items-end justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <h1 className="text-6xl font-bold tracking-tight">
+          <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="space-y-4 w-full">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white leading-tight">
                   {user.firstName} {user.lastName}
                 </h1>
-                <span className="bg-purple-500/20 text-purple-400 px-4 py-1.5 rounded-full text-sm font-bold border border-purple-500/30 backdrop-blur-md">
+                <span className="bg-purple-500/20 text-purple-400 px-4 py-1.5 rounded-full text-[10px] sm:text-sm font-bold border border-purple-500/30 backdrop-blur-md">
                   {user.gender}
                 </span>
               </div>
-              <div className="flex items-center gap-6 text-gray-400 font-medium">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-purple-500" />
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-gray-400 font-medium">
+                <div className="flex items-center gap-2 text-xs sm:text-base">
+                  <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
                   {user.city}, {user.country}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-purple-500" />
+                <div className="flex items-center gap-2 text-xs sm:text-base">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
                   {user.dateOfBirth ? formatDate(user.dateOfBirth) : 'N/A'}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Heart className="w-5 h-5 text-purple-500" />
+                <div className="flex items-center gap-2 text-xs sm:text-base">
+                  <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
                   {user.relationshipStatus?.replace('_', ' ')}
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex gap-3 sm:gap-4 shrink-0">
               {!id && (
                 <button 
                   onClick={() => navigate('/settings')}
-                  className="px-8 py-4 bg-white/5 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 transition-all font-bold flex items-center gap-2"
+                  className="flex-1 md:flex-none px-4 sm:px-8 py-3 sm:py-4 bg-white/5 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 transition-all font-bold flex items-center justify-center gap-2 text-xs sm:text-base"
                 >
-                  <Edit3 className="w-5 h-5" /> Edit Profile
+                  <Edit3 className="w-4 h-4 sm:w-5 sm:h-5" /> Edit Profile
                 </button>
               )}
-              <button className="p-4 bg-white/5 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 transition-all group">
-                <Share2 className="w-6 h-6 group-hover:text-purple-500" />
+              <button 
+                onClick={handleShare}
+                className="p-3 sm:p-4 bg-white/5 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 transition-all group shrink-0"
+              >
+                <Share2 className="w-5 h-5 sm:w-6 sm:h-6 group-hover:text-purple-500" />
               </button>
               {id && (
-                <button className="px-8 py-4 bg-purple-600 hover:bg-purple-700 rounded-2xl font-semibold transition-all flex items-center gap-2">
-                  Send Signal <Heart className="w-5 h-5 fill-white" />
+                <button className="flex-1 md:flex-none px-6 sm:px-8 py-3 sm:py-4 bg-purple-600 hover:bg-purple-700 rounded-2xl font-semibold transition-all flex items-center justify-center gap-2 text-xs sm:text-base">
+                  Send Signal <Heart className="w-4 h-4 sm:w-5 sm:h-5 fill-white" />
                 </button>
               )}
             </div>
@@ -243,12 +282,15 @@ export default function Profile({ profile }: ProfileProps) {
 
               {!id ? (
                 <div className="space-y-3">
-                  <button className="w-full py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-bold tracking-tight hover:bg-white/10 transition-all shadow-xl">
-                    Share Profile
+                  <button 
+                    onClick={handleShare}
+                    className="w-full py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-bold tracking-tight hover:bg-white/10 transition-all shadow-xl flex items-center justify-center gap-2"
+                  >
+                    <Share2 className="w-5 h-5" /> Share Profile
                   </button>
                   <button 
                     onClick={() => auth.signOut()}
-                    className="w-full py-5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl font-bold tracking-tight hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2 shadow-xl"
+                    className="w-full py-5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl font-bold tracking-tight hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2 shadow-xl mb-12"
                   >
                     <LogOut className="w-5 h-5" /> Logout Account
                   </button>
