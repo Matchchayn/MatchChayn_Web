@@ -18,9 +18,49 @@ const swalConfig = {
 
 export function useAlert() {
   const showAlert = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    // Clean message of Firebase references and tech jargon
+    let cleanMessage = message;
+    
+    // Try to parse JSON errors (from handleFirestoreError)
+    try {
+      if (message.startsWith('{') && message.endsWith('}')) {
+        const parsed = JSON.parse(message);
+        if (parsed.error) cleanMessage = parsed.error;
+      }
+    } catch (e) {
+      // Not JSON, continue with raw message
+    }
+
+    cleanMessage = cleanMessage.replace(/Firebase:?\s*/gi, '');
+    
+    // Replace obscure Firebase error codes with user-friendly messages
+    if (cleanMessage.includes('auth/invalid-credential') || cleanMessage.toLowerCase().includes('invalid credential')) {
+      cleanMessage = 'Invalid email or password. Please try again.';
+    } else if (cleanMessage.includes('auth/user-not-found')) {
+      cleanMessage = 'No account found with this email.';
+    } else if (cleanMessage.includes('auth/wrong-password')) {
+      cleanMessage = 'Incorrect password. Please try again.';
+    } else if (cleanMessage.includes('auth/email-already-in-use')) {
+      cleanMessage = 'This email is already registered.';
+    } else if (cleanMessage.includes('auth/popup-closed-by-user')) {
+      cleanMessage = 'Sign-in window was closed.';
+    } else if (cleanMessage.includes('permission-denied') || cleanMessage.includes('Missing or insufficient permissions')) {
+      cleanMessage = 'You do not have permission to perform this action.';
+    }
+    
+    // Strip any remaining (auth/...) codes or [firestore/...] codes
+    cleanMessage = cleanMessage.replace(/\(auth\/[^)]+\)\.?/g, '');
+    cleanMessage = cleanMessage.replace(/\[firestore\/[^\]]+\]\.?/g, '');
+    cleanMessage = cleanMessage.trim();
+    
+    // Capitalize first letter if it's not
+    if (cleanMessage.length > 0) {
+      cleanMessage = cleanMessage.charAt(0).toUpperCase() + cleanMessage.slice(1);
+    }
+    
     Swal.fire({
       ...swalConfig,
-      text: message,
+      text: cleanMessage,
       icon: type,
       toast: true,
       position: 'bottom-end',

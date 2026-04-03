@@ -4,12 +4,14 @@ import MainLayout from '../../components/MainLayout';
 import { Crown, CheckCircle2, Sparkles, Heart, Shield, Calendar, Users, X, Loader2 } from 'lucide-react';
 import { auth } from '../../firebase';
 import { downgradeUserToFree, upgradeUserToPro } from './proService';
+import { useAlert } from '../../hooks/useAlert';
 
 interface PremiumPageProps {
   profile: UserProfile | null;
 }
 
 export default function PremiumPage({ profile }: PremiumPageProps) {
+  const { showAlert } = useAlert();
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [isDowngrading, setIsDowngrading] = useState(false);
 
@@ -21,8 +23,10 @@ export default function PremiumPage({ profile }: PremiumPageProps) {
       await new Promise(resolve => setTimeout(resolve, 1500));
       await upgradeUserToPro(auth.currentUser.uid);
       if (profile) profile.isPro = true;
-    } catch (e) {
+      showAlert('Welcome to VIP! Your account has been upgraded.', 'success');
+    } catch (e: any) {
       console.error(e);
+      showAlert(e.message || 'Upgrade failed. Please try again.', 'error');
     } finally {
       setIsUpgrading(false);
     }
@@ -34,8 +38,10 @@ export default function PremiumPage({ profile }: PremiumPageProps) {
     try {
       await downgradeUserToFree(auth.currentUser.uid);
       if (profile) profile.isPro = false;
-    } catch (e) {
+      showAlert('Your account has been switched to the Free plan.', 'success');
+    } catch (e: any) {
       console.error(e);
+      showAlert(e.message || 'Action failed. Please try again.', 'error');
     } finally {
       setIsDowngrading(false);
     }

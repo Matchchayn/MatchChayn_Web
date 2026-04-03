@@ -647,8 +647,8 @@ export default function Messages({ profile }: MessagesProps) {
         await sendNotification(selectedMatch.uid || (selectedMatch as any).id, 'message', profile);
       }
     } catch (err) {
-      console.error('Firebase Save Failed:', err);
-      showAlert('Message failed to save to Firebase.', 'error');
+      console.error('Save Failed:', err);
+      showAlert('Message failed to send. Please try again.', 'error');
     } finally {
       setMediaLoading(false);
     }
